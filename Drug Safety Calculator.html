@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patient Drug Safety Tool</title>
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f4f7f9;
+      padding: 20px;
+      margin: 0;
+      color: #333;
+    }
+    h1, h2 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    form {
+      background: #fff;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-top: 15px;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 15px;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .results-section {
+      margin-top: 30px;
+      padding: 20px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .results-section pre {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-family: 'Arial', sans-serif;
+      font-size: 17px;
+      font-weight: 500;
+      color: #2d3436;
+    }
+    .results-section span.safe {
+      color: green;
+      font-weight: bold;
+    }
+    .results-section span.risky {
+      color: red;
+      font-weight: bold;
+    }
+    .references {
+      margin-top: 40px;
+      max-width: 800px;
+      margin: 20px auto;
+    }
+    @media screen and (max-width: 600px) {
+      form, .results-section, .references {
+        padding: 15px;
+        margin: 10px;
+      }
+      button {
+        font-size: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Patient Drug Safety Calculator</h1>
+  <form id="patientForm">
+    <label>Patient Name: <input type="text" name="patient_name" required /></label>
+    <label>Age: <input type="number" name="age" required /></label>
+    <label>Sex:
+      <select name="sex" required>
+        <option value="">-- Select --</option>
+        <option value="Male">Male</option>
+        <option value="Female">Female</option>
+        <option value="Other">Other</option>
+      </select>
+    </label>
+    <label>eGFR (Renal Function in mL/min/1.73m²):
+      <input type="number" name="egfr" step="0.1" min="0" max="150" placeholder="e.g. 90" />
+      <small style="display:block; margin-top:4px; color:#555;">
+        Normal: ≥90 | Mild: 60–89 | Moderate: 30–59 | Severe: &lt;30
+      </small>
+    </label>
+    <label>History of Falls:
+      <select name="falls_history" required>
+        <option value="">-- Select --</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </label>
+    <h2>Medications</h2>
+    <div id="medicationContainer"></div>
+    <button type="button" onclick="addMedicationField()">➕ Add Medication</button>
+    <br><br>
+    <button type="submit">✅ Evaluate Safety</button>
+  </form>
+  <div id="loadingSpinner" style="display:none; text-align:center; margin: 20px;">
+    <strong>Processing...</strong>
+  </div>
+  <div id="resultsACB" class="results-section"><h2>ACB Scale Evaluation</h2><pre></pre></div>
+  <div id="resultsBeers" class="results-section"><h2>Beers Criteria Evaluation</h2><pre></pre></div>
+  <div id="resultsSTOPP" class="results-section"><h2>STOPP/START Evaluation</h2><pre></pre></div>
+  <button id="downloadBtn" style="display:none; margin: 20px auto; display: block;">📄 Download PDF Report</button>
+  <div class="references">
+    <h2>References</h2>
+    <ul>
+      <li><a href="https://www.acbcalc.com/" target="_blank">ACB Anticholinergic Burden Calculator</a></li>
+      <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8869600/" target="_blank">Beers Criteria Reference</a></li>
+      <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10004995/" target="_blank">STOPP/START Criteria Reference</a></li>
+    </ul>
+  </div>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script>
+    const medicationData = {
+      "Amitriptyline": { acb: 3 },
+      "Diphenhydramine": { acb: 3 },
+      "Hydroxyzine": { acb: 3 },
+      "Paroxetine": { acb: 3 },
+      "Oxybutynin": { acb: 3 },
+      "Solifenacin": { acb: 3 },
+      "Tolterodine": { acb: 3 },
+      "Trospium": { acb: 3 },
+      "Fesoterodine": { acb: 3 },
+      "Chlorpheniramine": { acb: 3 },
+      "Scopolamine": { acb: 3 },
+      "Trihexyphenidyl": { acb: 3 },
+      "Benztropine": { acb: 3 },
+      "Doxepin": { acb: 3 },
+      "Nortriptyline": { acb: 3 },
+      "Olanzapine": { acb: 3 },
+      "Orphenadrine": { acb: 3 },
+      "Methocarbamol": { acb: 3 },
+      "Meclizine": { acb: 3 },
+      "Imipramine": { acb: 3 },
+      "Perphenazine": { acb: 3 },
+      "Promethazine": { acb: 3 },
+      "Propantheline": { acb: 3 },
+      "Quetiapine": { acb: 3 },
+      "Thioridazine": { acb: 3 },
+      "Trifluoperazine": { acb: 3 },
+      "Trimipramine": { acb: 3 },
+      "Cyclobenzaprine": { acb: 2 },
+      "Carbamazepine": { acb: 2 },
+      "Amantadine": { acb: 2 },
+      "Belladonna alkaloids": { acb: 2 },
+      "Cyproheptadine": { acb: 2 },
+      "Loxapine": { acb: 2 },
+      "Meperidine": { acb: 2 },
+      "Methotrimeprazine": { acb: 2 },
+      "Molindone": { acb: 2 },
+      "Oxcarbazepine": { acb: 2 },
+      "Pimozide": { acb: 2 },
+      "Anticholinergics": { acb: 2 },
+      "Cetirizine": { acb: 1 },
+      "Levocetirizine": { acb: 1 },
+      "Loratadine": { acb: 1 },
+      "Desloratadine": { acb: 1 },
+      "Iloperidone": { acb: 1 },
+      "Paliperidone": { acb: 1 },
+      "Asenapine": { acb: 1 },
+      "Aripiprazole": { acb: 1 },
+      "Venlafaxine": { acb: 1 },
+      "Nefopam": { acb: 1 },
+      "Clidinium": { acb: 1 },
+      "Alprazolam": { acb: 1 },
+      "Diazepam": { acb: 1 },
+      "Codeine": { acb: 1 },
+      "Warfarin": { acb: 1 },
+      "NSAIDs": { acb: 1 },
+      "Opioids": { acb: 1 },
+      "SSRIs": { acb: 1 },
+      "CNS Depressants": { acb: 1 },
+      "Sulfonylureas": { acb: 1 },
+      "Digoxin": { acb: 1 },
+      "PPI (Proton Pump Inhibitors)": { acb: 1 },
+      "Corticosteroids": { acb: 1 },
+      "Trazodone": { acb: 1 },
+      "Bupropion": { acb: 1 },
+      "Furosemide": { acb: 1 },
+      "Fluvoxamine": { acb: 1 },
+      "Beclometasone dipropionate": { acb: 1 },
+      "Prednisolone": { acb: 1 },
+      "Prednisone": { acb: 1 },
+      "Haloperidol": { acb: 1 },
+      "Morphine": { acb: 1 },
+      "Timolol": { acb: 1 },
+      "Nifedipine": { acb: 1 },
+      "Ranitidine": { acb: 1 },
+      "Theophylline": { acb: 1 },
+      "Dementia": { acb: 0 },
+      "Falls": { acb: 0 },
+      "Hypoglycemia": { acb: 0 },
+      "Renal Impairment": { acb: 0 },
+      "Long-term Use": { acb: 0 },
+      "Hypertension": { acb: 0 },
+      "Antipsychotics": { acb: 0 },
+      "Barbiturates": { acb: 0 },
+      "Benzodiazepines": { acb: 0 },
+      "Chlorpropamide": { acb: 0 },
+      "Disopyramide": { acb: 0 },
+      "Estrogens (oral)": { acb: 0 },
+      "Flurazepam": { acb: 0 },
+      "Gabapentinoids": { acb: 0 },
+      "Glyburide": { acb: 0 },
+      "Gout": { acb: 0 },
+      "Indomethacin": { acb: 0 },
+      "Methocarbamol": { acb: 0 },
+      "Metoclopramide": { acb: 0 },
+      "Nitrofurantoin": { acb: 0 },
+      "Pentazocine": { acb: 0 },
+      "Potassium-sparing diuretics": { acb: 0 },
+      "Propoxyphene": { acb: 0 },
+      "Thiazide Diuretic": { acb: 0 },
+      "Trimethobenzamide": { acb: 0 }
+    };
+    const beersList = {
+      "Amitriptyline": "High anticholinergic effects, risk of confusion, dry mouth, constipation.",
+      "Doxepin": "Strong anticholinergic properties.",
+      "Diphenhydramine": "Highly anticholinergic, increased risk of confusion and falls.",
+      "Meperidine": "Risk of neurotoxicity, especially in renal impairment.",
+      "Indomethacin": "Higher risk of GI bleeding than other NSAIDs.",
+      "Flurazepam": "Long half-life benzodiazepine, increased sedation and fall risk.",
+      "Diazepam": "Long-acting benzodiazepine, risk of cognitive impairment and falls.",
+      "Nitrofurantoin": "Avoid in patients with CrCl < 30 mL/min due to pulmonary toxicity risk.",
+      "Cyclobenzaprine": "Anticholinergic side effects, sedation.",
+      "Methocarbamol": "Sedative effects, increased fall risk.",
+      "Hydroxyzine": "Strong anticholinergic effects.",
+      "Propoxyphene": "Weak analgesic, serious cardiac effects.",
+      "Pentazocine": "CNS effects like hallucinations, confusion.",
+      "Estrogens (oral)": "Risk of breast and endometrial cancer, not cardioprotective.",
+      "Barbiturates": "High risk of dependence, cognitive impairment.",
+      "Chlorpropamide": "Risk of prolonged hypoglycemia.",
+      "Glyburide": "High risk of severe hypoglycemia in elderly.",
+      "Metoclopramide": "Extrapyramidal effects, tardive dyskinesia.",
+      "Disopyramide": "May induce heart failure, anticholinergic.",
+      "Trimethobenzamide": "Limited efficacy, extrapyramidal effects."
+    };
+    const stoppCombinations = [
+      {
+        combination: ["Benzodiazepines", "Opioids"],
+        risk: "Profound sedation, respiratory depression, coma, and death."
+      },
+      {
+        combination: ["Anticholinergics", "Dementia"],
+        risk: "Worsening cognitive impairment and confusion."
+      },
+      {
+        combination: ["NSAIDs", "Corticosteroids"],
+        risk: "Increased risk of gastrointestinal bleeding or ulcers."
+      },
+      {
+        combination: ["NSAIDs", "Hypertension"],
+        risk: "Exacerbation of hypertension and renal damage."
+      },
+      {
+        combination: ["Digoxin", "Renal Impairment"],
+        risk: "Increased risk of digoxin toxicity."
+      },
+      {
+        combination: ["Warfarin", "NSAIDs"],
+        risk: "Significant bleeding risk due to enhanced anticoagulation."
+      },
+      {
+        combination: ["SSRIs", "NSAIDs"],
+        risk: "Increased gastrointestinal bleeding risk."
+      },
+      {
+        combination: ["CNS Depressants", "Falls"],
+        risk: "Increased fall risk due to sedation."
+      },
+      {
+        combination: ["Sulfonylureas", "Hypoglycemia"],
+        risk: "Prolonged hypoglycemia, especially in elderly."
+      },
+      {
+        combination: ["PPI (Proton Pump Inhibitors)", "Long-term Use"],
+        risk: "Risk of bone fractures and C. difficile infection."
+      },
+      {
+        combination: ["Digoxin", "Renal Impairment"],
+        risk: "STOPP: Avoid Digoxin >125 mcg/day if renal function is impaired (eGFR < 50)."
+      },
+      {
+        combination: ["Thiazide Diuretic", "Gout"],
+        risk: "STOPP: Thiazide use in patients with history of gout can precipitate attacks."
+      },
+      {
+        combination: ["Flurazepam", "Long-term Use"],
+        risk: "STOPP: Long-term use of long-acting benzodiazepines (e.g., flurazepam) increases risk of sedation, falls, and cognitive decline."
+      },
+      {
+        combination: ["Anticholinergics", "Antipsychotics"],
+        risk: "Increased risk of cognitive decline and falls."
+      },
+      {
+        combination: ["ACE inhibitors", "Potassium-sparing diuretics"],
+        risk: "Increased risk of hyperkalemia."
+      },
+      {
+        combination: ["Opioids", "Gabapentinoids"],
+        risk: "Increased risk of respiratory depression and sedation."
+      }
+    ];
+    function addMedicationField() {
+      const container = document.getElementById('medicationContainer');
+      const div = document.createElement('div');
+      const id = Date.now();
+      div.innerHTML = `
+        <label>Medication:
+          <select class="med-select" name="medication" onchange="document.getElementById('acb_${id}').value = medicationData[this.value]?.acb || 0">
+            <option value="">-- Select Medicine --</option>
+            ${Object.keys(medicationData).sort().map(name => `<option value="${name}">${name}</option>`).join('')}
+          </select>
+        </label>
+        <label>ACB Score: <input type="number" name="acb_score" id="acb_${id}" readonly /></label>
+      `;
+      container.appendChild(div);
+      $(div).find(".med-select").select2({ placeholder: "Search or select a medicine", width: '100%' });
+    }
+    document.getElementById('patientForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      document.getElementById('loadingSpinner').style.display = 'block';
+      setTimeout(() => {
+        const name = document.querySelector('input[name="patient_name"]').value || "Patient";
+        const age = parseInt(document.querySelector('input[name="age"]').value);
+        const egfr = parseFloat(document.querySelector('input[name="egfr"]').value);
+        const falls = document.querySelector('select[name="falls_history"]').value;
+        const meds = Array.from(document.querySelectorAll('select[name="medication"]')).map(m => m.value);
+        const acbScores = Array.from(document.querySelectorAll('input[name="acb_score"]')).map(a => parseInt(a.value) || 0);
+        const totalACB = acbScores.reduce((a, b) => a + b, 0);
+        let acbText = `Total ACB Score: ${totalACB}\n`;
+        meds.forEach((med, i) => {
+          if (acbScores[i] > 0) acbText += `⚠ ${med}: ACB ${acbScores[i]}\n`;
+        });
+        if (totalACB >= 3) acbText += '<span class="risky">⚠ High total ACB score.</span>\n';
+        if (age > 65 && totalACB > 0) acbText += '<span class="risky">⚠ Elderly + ACB meds = cognitive risk.</span>\n';
+        if (falls === "Yes" && totalACB > 0) acbText += '<span class="risky">⚠ Fall history + ACB risk.</span>\n';
+        if (acbText.trim() === '') acbText = '<span class="safe">✅ No ACB risks found.</span>';
+        let beersWarnings = meds
+          .filter(m => beersList[m])
+          .map(m => `<span class="risky">⚠ <strong>${m}:</strong> ${beersList[m]}</span>`);
+        let beersText = beersWarnings.length
+          ? beersWarnings.join('\n')
+          : '<span class="safe">✅ No Beers Criteria risks found for selected medications.</span>';
+        let stoppText = '';
+        if (!isNaN(egfr)) {
+          if (egfr >= 90) {
+            stoppText += '<span class="safe">✅ Normal renal function (eGFR ≥ 90).</span>\n';
+          } else if (egfr >= 60) {
+            stoppText += '<span class="safe">⚠ Mild renal impairment (eGFR 60–89).</span>\n';
+          } else if (egfr >= 30) {
+            stoppText += '<span class="risky">⚠ Moderate renal impairment (eGFR 30–59).</span>\n';
+          } else {
+            stoppText += '<span class="risky">⚠ Severe renal impairment (eGFR &lt; 30). Dose adjustment may be needed.</span>\n';
+          }
+        }
+        stoppCombinations.forEach(({ combination, risk }) => {
+          const [med1, med2] = combination.map(m => m.toLowerCase());
+          const selectedMeds = meds.map(m => m.toLowerCase());
+          if (selectedMeds.includes(med1) && selectedMeds.includes(med2)) {
+            stoppText += `<span class="risky">⚠ ${combination.join(" + ")}\nReason: ${risk}</span>\n`;
+          }
+        });
+        if (stoppText.trim() === '') stoppText = '<span class="safe">✅ No STOPP/START warnings found.</span>';
+        document.querySelector('#resultsACB pre').innerHTML = `<strong> ACB Evaluation</strong>\n\n${acbText}`;
+        document.querySelector('#resultsBeers pre').innerHTML = `<strong> Beers Criteria Notes</strong>\n\n${beersText}`;
+        document.querySelector('#resultsSTOPP pre').innerHTML = `<strong> STOPP/START Evaluation</strong>\n\n${stoppText}`;
+        document.getElementById('loadingSpinner').style.display = 'none';
+        document.getElementById('resultsACB').scrollIntoView({ behavior: 'smooth' });
+        document.getElementById('downloadBtn').style.display = 'block';
+      }, 300);
+    });
+    document.getElementById('downloadBtn').addEventListener('click', function () {
+      const name = document.querySelector('input[name="patient_name"]').value || "Patient";
+      const age = document.querySelector('input[name="age"]').value;
+      const sex = document.querySelector('select[name="sex"]').value;
+
+      const acbHTML = document.querySelector('#resultsACB pre').innerHTML;
+      const beersHTML = document.querySelector('#resultsBeers pre').innerHTML;
+      const stoppHTML = document.querySelector('#resultsSTOPP pre').innerHTML;
+
+      const printContent = `
+        <html>
+          <head>
+            <title>Medication Safety Report</title>
+            <style>
+              body { font-family: 'Arial', sans-serif; color: #333; }
+              h1 { text-align: center; color: #2c3e50; }
+              h3 { color: #27ae60; }
+              .beers { color: #2980b9; }
+              .stopp { color: #c0392b; }
+              .section { background: #f4f4f4; padding: 10px; border-left: 4px solid; }
+              .patient-info { text-align: left; }
+            </style>
+          </head>
+          <body>
+            <h1>Drug Safety Calculator Report</h1>
+            <div class="patient-info">
+              <h2>${name}</h2>
+              <p>Age: ${age}</p>
+              <p>Sex: ${sex}</p>
+              <h3><strong>Date:</strong> ${new Date().toLocaleDateString()}</h3>
+            </div>
+
+            <h4 class="section" style="border-left-color: #27ae60;"> ACB Scale Evaluation</h4>
+            <div class="section">${acbHTML}</div>
+
+            <h4 class="section beers" style="border-left-color: #2980b9;"> Beers Criteria Evaluation</h4>
+            <div class="section beers">${beersHTML}</div>
+
+            <h4 class="section stopp" style="border-left-color: #c0392b;"> STOPP/START Evaluation</h4>
+            <div class="section stopp">${stoppHTML}</div>
+
+            <p style="margin-top: 20px; font-style: italic;">
+              Generated using ACB Scale, Beers Criteria, and STOPP/START guidelines.
+            </p>
+          </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.open();
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+
+      printWindow.onload = function () {
+        printWindow.print();
+        printWindow.close();
+      };
+    });
+    addMedicationField();
+  </script>
+  <div id="pdfContainer" style="
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+    width: 800px;
+    padding: 30px;
+    font-family: 'Segoe UI', sans-serif;
+    color: #333;
+    background: white;
+    z-index: -1;
+  "></div>
+</body>
+</html>
