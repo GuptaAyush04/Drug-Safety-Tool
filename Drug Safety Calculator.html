@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Patient Drug Safety Tool</title>
-  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+  <title>Patient Drug Safety Calculator</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,27 +16,86 @@
       text-align: center;
       color: #2c3e50;
     }
-    form {
+    form, #suggestionContainer, .results-section, .references { /* Common container styles */
       background: #fff;
       padding: 25px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
       max-width: 800px;
-      margin: 0 auto;
+      margin: 20px auto; /* Spacing between sections */
+      /* Transition properties for smooth appearance */
+      transition: max-height 0.6s ease-out, opacity 0.5s ease-in-out, margin-top 0.6s ease-out;
+      overflow: hidden; /* Needed for max-height transition */
+    }
+
+    /* Initial state for transitionable elements */
+    #suggestionFormArea, .results-section {
+        max-height: 0;
+        opacity: 0;
+        padding-top: 0; /* Reduce padding when hidden */
+        padding-bottom: 0;
+        margin-top: 0; /* Collapse margin when hidden */
+        border: none; /* Hide border when collapsed */
+    }
+     /* Visible state for transitionable elements */
+     #suggestionFormArea.visible, .results-section.visible {
+        max-height: 2000px; /* Large enough to accommodate content */
+        opacity: 1;
+        padding: 25px; /* Restore padding */
+        margin-top: 20px; /* Restore margin */
+        border: 1px solid #eee; /* Optional: restore border */
+        border-radius: 12px; /* Ensure radius matches */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Restore shadow */
+     }
+     /* Specific adjustments if needed */
+     #suggestionFormArea.visible {
+        background: #eef;
+        border: 1px dashed #3498db;
+     }
+    .results-section.visible {
+        background: #fff;
+        border: none; /* Keep borderless */
+    }
+
+
+    #suggestionContainer h2, .results-section h2, .references h2 { /* Section headers */
+        margin-top: 0;
+        text-align: left;
+        color: #3498db; /* Accent color for headers */
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
     }
     label {
       font-weight: 600;
       display: block;
       margin-top: 15px;
+      margin-bottom: 5px;
     }
-    input, select {
+    input[type="text"], input[type="number"], input[type="email"], select, textarea {
       width: 100%;
       padding: 10px;
-      margin-top: 5px;
       border-radius: 6px;
       border: 1px solid #ccc;
       font-size: 15px;
+      box-sizing: border-box; /* Include padding/border in width */
     }
+    input#abhaInput {
+      letter-spacing: 1px;
+    }
+    /* Style for ACB input when showing N/A */
+    input[name="acb_score"] {
+        text-align: center;
+        font-style: italic;
+        color: #555;
+        background-color: #f8f9fa; /* Light background for read-only */
+        cursor: default;
+      }
+      input[name="acb_score"]:not([value="N/A"]) { /* Style when it has a number */
+        font-style: normal;
+        color: #333;
+      }
+
     button {
       background-color: #3498db;
       color: white;
@@ -47,59 +105,238 @@
       cursor: pointer;
       font-size: 16px;
       margin-top: 15px;
+      transition: background-color 0.2s ease;
     }
     button:hover {
       background-color: #2980b9;
     }
-    .results-section {
-      margin-top: 30px;
-      padding: 20px;
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      max-width: 800px;
-      margin-left: auto;
-      margin-right: auto;
+    /* Style for secondary/action buttons */
+    button.secondary-action {
+        background-color: #5dade2; /* Lighter blue */
     }
+    button.secondary-action:hover {
+        background-color: #3498db;
+    }
+    /* Style for danger/delete buttons */
+    button.delete-med-btn {
+        background-color: #e74c3c; /* Red */
+        padding: 8px 12px; /* Smaller padding */
+        font-size: 14px;
+        margin-left: 5px; /* Space from ACB input */
+        margin-top: 0; /* Align with inputs */
+        align-self: flex-end; /* Align to bottom of flex row */
+        line-height: 1.2; /* Adjust line height for icon */
+        min-width: 40px; /* Ensure button has some width */
+        flex-shrink: 0; /* Prevent shrinking */
+    }
+    button.delete-med-btn:hover {
+        background-color: #c0392b;
+    }
+
+    /* Styles for inline medication/ACB/Delete */
+    .med-row {
+      display: flex;
+      align-items: flex-end; /* Align items to the bottom */
+      gap: 10px; /* Space between elements */
+      margin-bottom: 10px;
+      width: 100%;
+      position: relative; /* Needed for absolute positioning of suggestions */
+    }
+    .med-input-group {
+      flex: 1; /* Medication input takes most space */
+      min-width: 150px; /* Minimum width */
+      position: relative; /* Ensure relative positioning for suggestions */
+    }
+    .acb-input-group {
+      width: 85px; /* Fixed width for ACB score */
+      flex-shrink: 0; /* Prevent shrinking */
+    }
+    /* Adjust labels within the flex row */
+    .med-row label {
+      margin-top: 0;
+      margin-bottom: 3px;
+    }
+    /* Target medication text input */
+    .med-row input.med-input {
+      width: 100%;
+    }
+    /* Target ACB text input */
+    .med-row input[type="text"][name="acb_score"] {
+      width: 100%;
+    }
+
+    /* Autocomplete Suggestions Styling */
+    .autocomplete-suggestions {
+        position: absolute;
+        border: 1px solid #ccc;
+        border-top: none;
+        background-color: #fff;
+        max-height: 150px; /* Limit height and make scrollable */
+        overflow-y: auto;
+        z-index: 1000; /* Ensure it appears above other elements */
+        width: 100%; /* Match width of input group */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-radius: 0 0 6px 6px;
+        display: none; /* Hidden by default */
+        left: 0;
+        top: 100%; /* Position below the input group */
+    }
+
+    .autocomplete-suggestions div {
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    .autocomplete-suggestions div:hover {
+        background-color: #eee;
+    }
+    .autocomplete-suggestions div.selected { /* Optional: highlight selection */
+        background-color: #ddd;
+    }
+
+
+    /* Suggestion Area Specifics */
+    #suggestionFormArea {
+        /* display: none; Initially hidden - handled by visibility class now */
+        background: #eef;
+        padding: 20px;
+        border-radius: 8px;
+        margin-top: 15px;
+        border: 1px dashed #3498db;
+    }
+      #suggestionFormArea label {
+        margin-top: 10px;
+      }
+      #suggestionFormArea input, #suggestionFormArea textarea {
+          margin-bottom: 10px;
+      }
+      #suggestionFormArea button {
+          background-color: #2ecc71; /* Green for send */
+      }
+      #suggestionFormArea button:hover {
+          background-color: #27ae60;
+      }
+
+
     .results-section pre {
       white-space: pre-wrap;
+      word-wrap: break-word;
       line-height: 1.6;
-      font-family: 'Arial', sans-serif;
-      font-size: 17px;
+      font-family: 'Consolas', 'Courier New', monospace; /* Monospace for results */
+      font-size: 15px;
       font-weight: 500;
       color: #2d3436;
+      background: #f8f9fa;
+      padding: 15px;
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      margin-top: 10px;
     }
     .results-section span.safe {
-      color: green;
+      color: #28a745; /* Green */
       font-weight: bold;
     }
     .results-section span.risky {
-      color: red;
+      color: #dc3545; /* Red */
       font-weight: bold;
     }
-    .references {
-      margin-top: 40px;
-      max-width: 800px;
-      margin: 20px auto;
+    .references ul {
+      list-style: disc;
+      padding-left: 20px;
+      margin-top: 5px;
     }
-    @media screen and (max-width: 600px) {
-      form, .results-section, .references {
+      .references li {
+        margin-bottom: 10px;
+        line-height: 1.5;
+      }
+      .references p {
+        margin-bottom: 5px;
+      }
+      .references p small {
+        display: block;
+        margin-top: 10px;
+        color: #555;
+      }
+
+    #loadingSpinner {
+        display:none; /* Controlled by JS */
+        text-align:center;
+        margin: 25px auto;
         padding: 15px;
-        margin: 10px;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        max-width: 300px;
+    }
+    #loadingSpinner strong {
+        color: #3498db;
+        font-size: 1.1em;
+    }
+
+    /* Mobile Friendliness */
+    @media screen and (max-width: 600px) {
+      body {
+          padding: 10px;
       }
-      button {
+      form, .results-section, .references, #suggestionContainer {
+        padding: 15px;
+        margin: 15px auto;
+      }
+      /* Restore visibility class padding on mobile */
+      #suggestionFormArea.visible, .results-section.visible {
+        padding: 15px;
+      }
+
+      button, button.secondary-action, #downloadBtn {
         font-size: 15px;
+        width: 100%;
+        padding: 12px 15px;
+        box-sizing: border-box;
       }
+      /* Stack medication/ACB/Delete on small screens */
+      .med-row {
+          flex-direction: column;
+          align-items: stretch; /* Stretch items full width */
+          gap: 8px; /* Adjust gap for vertical stacking */
+          margin-bottom: 15px;
+      }
+      /* Ensure ACB group and delete button take full width when stacked */
+      .acb-input-group, .delete-med-btn {
+          width: 100%;
+          margin-left: 0; /* Remove margin for stacked delete */
+      }
+      .med-row .delete-med-btn {
+          margin-top: 5px; /* Add some space above delete when stacked */
+          align-self: center; /* Center delete button */
+          max-width: 150px; /* Optional: prevent delete from being too wide */
+      }
+      /* Adjust suggestion list width on mobile */
+      .autocomplete-suggestions {
+          width: calc(100% - 2px); /* Account for border */
+      }
+      h1 { font-size: 1.6em; }
+      h2 { font-size: 1.3em; }
+      .results-section pre { font-size: 14px; }
     }
   </style>
 </head>
 <body>
   <h1>Patient Drug Safety Calculator</h1>
+
   <form id="patientForm">
-    <label>Patient Name: <input type="text" name="patient_name" required /></label>
-    <label>Age: <input type="number" name="age" required /></label>
+    <h2>Patient Information</h2>
+    <label>Patient Name: <input type="text" name="patient_name" placeholder="Enter patient's name" /></label>
+
+    <label>ABHA ID:
+        <input type="text" id="abhaInput" name="abha_id" placeholder="e.g., 12-3456-7890-1234"
+               pattern="\d{2}-\d{4}-\d{4}-\d{4}"
+               title="Enter 14 digits; hyphens added automatically. (Optional)"
+               maxlength="17" inputmode="numeric" />
+    </label>
+
+    <label>Age: <input type="number" name="age" min="0" placeholder="e.g., 75" /></label>
     <label>Sex:
-      <select name="sex" required>
+      <select name="sex">
         <option value="">-- Select --</option>
         <option value="Male">Male</option>
         <option value="Female">Female</option>
@@ -107,372 +344,1000 @@
       </select>
     </label>
     <label>eGFR (Renal Function in mL/min/1.73m²):
-      <input type="number" name="egfr" step="0.1" min="0" max="150" placeholder="e.g. 90" />
+      <input type="number" name="egfr" step="0.1" min="0" max="300" placeholder="e.g., 65 (Optional)" />
       <small style="display:block; margin-top:4px; color:#555;">
-        Normal: ≥90 | Mild: 60–89 | Moderate: 30–59 | Severe: &lt;30
+        Normal: ≥90 | Mild: 60–89 | Moderate: 30–59 | Severe: &lt;30 (Enter value if known)
       </small>
     </label>
     <label>History of Falls:
-      <select name="falls_history" required>
+      <select name="falls_history">
         <option value="">-- Select --</option>
         <option value="Yes">Yes</option>
         <option value="No">No</option>
       </select>
     </label>
+
     <h2>Medications</h2>
-    <div id="medicationContainer"></div>
-    <button type="button" onclick="addMedicationField()">➕ Add Medication</button>
+    <div id="medicationContainer">
+      </div>
+    <button type="button" class="secondary-action" onclick="addMedicationField()">➕ Add Another Medication</button>
     <br><br>
     <button type="submit">✅ Evaluate Safety</button>
   </form>
-  <div id="loadingSpinner" style="display:none; text-align:center; margin: 20px;">
-    <strong>Processing...</strong>
+
+  <div id="suggestionContainer">
+      <h2>Suggest/Update Medication Info</h2>
+      <p style="font-size: 0.9em; color: #555;">
+          Is a medication missing, listed incorrectly (e.g., wrong ACB), or do you have updated information? Please let us know!
+      </p>
+      <button type="button" id="showSuggestionFormBtn" class="secondary-action">✏️ Suggest/Update Medication Info</button>
+
+      <div id="suggestionFormArea"> <label for="suggestionMedName">Medication Name:</label>
+        <input type="text" id="suggestionMedName" name="suggestion_med_name" placeholder="Enter the medication name" />
+
+        <label for="suggestionDetails">Details / Correction / Source:</label>
+        <textarea id="suggestionDetails" name="suggestion_details" rows="4" placeholder="e.g., 'Amitriptyline ACB score should be 3 based on [Source]', or 'Please add [Drug Name], it has ACB score X', etc."></textarea>
+
+        <label for="suggestionEmail">Your Email (Optional):</label>
+        <input type="email" id="suggestionEmail" name="suggestion_email" placeholder="So we can contact you if needed" />
+
+        <button type="button" id="submitSuggestionBtn">✉️ Send Suggestion (Opens Gmail)</button>
+        <small style="display: block; margin-top: 8px; color: #777;">
+            Note: Clicking 'Send Suggestion' will attempt to open a pre-filled Gmail compose window in a new tab. This works best for Gmail users. Others may need to copy the details manually.
+        </small>
+      </div>
   </div>
-  <div id="resultsACB" class="results-section"><h2>ACB Scale Evaluation</h2><pre></pre></div>
-  <div id="resultsBeers" class="results-section"><h2>Beers Criteria Evaluation</h2><pre></pre></div>
-  <div id="resultsSTOPP" class="results-section"><h2>STOPP/START Evaluation</h2><pre></pre></div>
-  <button id="downloadBtn" style="display:none; margin: 20px auto; display: block;">📄 Download PDF Report</button>
+
+  <div id="loadingSpinner">
+    <strong>Processing... Please wait.</strong>
+  </div>
+
+  <div id="resultsACB" class="results-section"><h2>Anticholinergic Burden (ACB) Scale Evaluation</h2><pre></pre></div>
+  <div id="resultsBeers" class="results-section"><h2>Beers Criteria® Evaluation (2023 Examples)</h2><pre></pre></div>
+  <div id="resultsSTOPP" class="results-section"><h2>STOPP Criteria & Renal Assessment (v3 Examples)</h2><pre></pre></div>
+
+  <button id="downloadBtn" style="display:none; margin: 20px auto; width: auto;" class="secondary-action">📄 Generate Print Report</button>
+
   <div class="references">
-    <h2>References</h2>
+    <h2>Data Sources & References</h2>
+    <p><em>Evaluations based on the following criteria (Note: This tool uses selected examples and may not be exhaustive):</em></p>
     <ul>
-      <li><a href="https://www.acbcalc.com/" target="_blank">ACB Anticholinergic Burden Calculator</a></li>
-      <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8869600/" target="_blank">Beers Criteria Reference</a></li>
-      <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10004995/" target="_blank">STOPP/START Criteria Reference</a></li>
+      <li>
+        <strong>Anticholinergic Burden (ACB):</strong> Scores based on commonly cited scales and resources (e.g., <a href="https://www.acbcalc.com/" target="_blank" rel="noopener noreferrer">ACB Calculator</a> combining ACB scale & German ACB scale, literature reviews). Data referenced ~2024. Clinical interpretation is essential as scores may vary between scales and individual response differs. Drugs listed with ACB 'N/A' may have unknown/variable scores or are included due to other criteria (Beers/STOPP).
+      </li>
+      <li>
+        <strong>Beers Criteria®:</strong> Based on the <a href="https://pubmed.ncbi.nlm.nih.gov/36607894/" target="_blank" rel="noopener noreferrer">American Geriatrics Society 2023 Updated AGS Beers Criteria®</a> for Potentially Inappropriate Medication Use in Older Adults. Only selected high-risk examples are implemented here.
+      </li>
+      <li>
+        <strong>STOPP/START Criteria:</strong> Based on <a href="https://pubmed.ncbi.nlm.nih.gov/33775547/" target="_blank" rel="noopener noreferrer">STOPP/START criteria version 3 (O’Mahony et al., 2023)</a>. Only selected examples of potentially inappropriate prescriptions (STOPP) related to drug-drug, drug-disease, duplicate therapy, and renal function interactions are implemented. START criteria (omitted medications) are not evaluated by this tool.
+      </li>
+        <li><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10004995/" target="_blank" rel="noopener noreferrer">STOPP/START Criteria Reference (Version 2, example implementation)</a></li>
     </ul>
+      <p><small><strong>Disclaimer:</strong> This tool is for informational purposes only and not a substitute for professional clinical judgment. Always consult full guidelines, verify information independently, and consider the complete clinical picture. Medication lists and criteria require regular updates.</small></p>
   </div>
+
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script>
+    // --- DATA SOURCES ---
     const medicationData = {
-      "Amitriptyline": { acb: 3 },
-      "Diphenhydramine": { acb: 3 },
-      "Hydroxyzine": { acb: 3 },
-      "Paroxetine": { acb: 3 },
-      "Oxybutynin": { acb: 3 },
-      "Solifenacin": { acb: 3 },
-      "Tolterodine": { acb: 3 },
-      "Trospium": { acb: 3 },
-      "Fesoterodine": { acb: 3 },
-      "Chlorpheniramine": { acb: 3 },
-      "Scopolamine": { acb: 3 },
-      "Trihexyphenidyl": { acb: 3 },
-      "Benztropine": { acb: 3 },
-      "Doxepin": { acb: 3 },
-      "Nortriptyline": { acb: 3 },
-      "Olanzapine": { acb: 3 },
-      "Orphenadrine": { acb: 3 },
-      "Methocarbamol": { acb: 3 },
-      "Meclizine": { acb: 3 },
-      "Imipramine": { acb: 3 },
-      "Perphenazine": { acb: 3 },
-      "Promethazine": { acb: 3 },
-      "Propantheline": { acb: 3 },
-      "Quetiapine": { acb: 3 },
-      "Thioridazine": { acb: 3 },
-      "Trifluoperazine": { acb: 3 },
-      "Trimipramine": { acb: 3 },
-      "Cyclobenzaprine": { acb: 2 },
-      "Carbamazepine": { acb: 2 },
-      "Amantadine": { acb: 2 },
-      "Belladonna alkaloids": { acb: 2 },
-      "Cyproheptadine": { acb: 2 },
-      "Loxapine": { acb: 2 },
-      "Meperidine": { acb: 2 },
-      "Methotrimeprazine": { acb: 2 },
-      "Molindone": { acb: 2 },
-      "Oxcarbazepine": { acb: 2 },
-      "Pimozide": { acb: 2 },
-      "Anticholinergics": { acb: 2 },
-      "Cetirizine": { acb: 1 },
-      "Levocetirizine": { acb: 1 },
-      "Loratadine": { acb: 1 },
-      "Desloratadine": { acb: 1 },
-      "Iloperidone": { acb: 1 },
-      "Paliperidone": { acb: 1 },
-      "Asenapine": { acb: 1 },
-      "Aripiprazole": { acb: 1 },
-      "Venlafaxine": { acb: 1 },
-      "Nefopam": { acb: 1 },
-      "Clidinium": { acb: 1 },
-      "Alprazolam": { acb: 1 },
-      "Diazepam": { acb: 1 },
-      "Codeine": { acb: 1 },
-      "Warfarin": { acb: 1 },
-      "NSAIDs": { acb: 1 },
-      "Opioids": { acb: 1 },
-      "SSRIs": { acb: 1 },
-      "CNS Depressants": { acb: 1 },
-      "Sulfonylureas": { acb: 1 },
-      "Digoxin": { acb: 1 },
-      "PPI (Proton Pump Inhibitors)": { acb: 1 },
-      "Corticosteroids": { acb: 1 },
-      "Trazodone": { acb: 1 },
-      "Bupropion": { acb: 1 },
-      "Furosemide": { acb: 1 },
-      "Fluvoxamine": { acb: 1 },
-      "Beclometasone dipropionate": { acb: 1 },
-      "Prednisolone": { acb: 1 },
-      "Prednisone": { acb: 1 },
-      "Haloperidol": { acb: 1 },
-      "Morphine": { acb: 1 },
-      "Timolol": { acb: 1 },
-      "Nifedipine": { acb: 1 },
-      "Ranitidine": { acb: 1 },
-      "Theophylline": { acb: 1 },
-      "Dementia": { acb: 0 },
-      "Falls": { acb: 0 },
-      "Hypoglycemia": { acb: 0 },
-      "Renal Impairment": { acb: 0 },
-      "Long-term Use": { acb: 0 },
-      "Hypertension": { acb: 0 },
-      "Antipsychotics": { acb: 0 },
-      "Barbiturates": { acb: 0 },
-      "Benzodiazepines": { acb: 0 },
-      "Chlorpropamide": { acb: 0 },
-      "Disopyramide": { acb: 0 },
-      "Estrogens (oral)": { acb: 0 },
-      "Flurazepam": { acb: 0 },
-      "Gabapentinoids": { acb: 0 },
-      "Glyburide": { acb: 0 },
-      "Gout": { acb: 0 },
-      "Indomethacin": { acb: 0 },
-      "Methocarbamol": { acb: 0 },
-      "Metoclopramide": { acb: 0 },
-      "Nitrofurantoin": { acb: 0 },
-      "Pentazocine": { acb: 0 },
-      "Potassium-sparing diuretics": { acb: 0 },
-      "Propoxyphene": { acb: 0 },
-      "Thiazide Diuretic": { acb: 0 },
-      "Trimethobenzamide": { acb: 0 }
-    };
+            // --- ACB Score 3: High Burden ---
+            "Amitriptyline": { acb: 3 }, "Amoxapine": { acb: 3 }, "Atropine": { acb: 3 }, "Azatadine": { acb: 3 },
+            "Belladonna": { acb: 3 }, "Benztropine": { acb: 3 }, "Biperiden": { acb: 3 }, "Brompheniramine": { acb: 3 },
+            "Buclizine": { acb: 3 }, "Carbinoxamine": { acb: 3 }, "Chlorphenamine": { acb: 3 }, "Chlorpromazine": { acb: 3 },
+            "Chlorprothixene": { acb: 3 }, "Cinnarizine": { acb: 3 }, "Clemastine": { acb: 3 }, "Clidinium": { acb: 3 },
+            "Clomipramine": { acb: 3 }, "Clozapine": { acb: 3 }, "Cyclizine": { acb: 3 }, "Cyproheptadine": { acb: 3 },
+            "Darifenacin": { acb: 3 }, "Desipramine": { acb: 3 }, "Dicyclomine": { acb: 3 }, "Dimenhydrinate": { acb: 3 },
+            "Diphenhydramine": { acb: 3 }, "Dothiepin": { acb: 3 }, "Doxepin": { acb: 3 }, "Doxylamine": { acb: 3 },
+            "Fesoterodine": { acb: 3 }, "Flavoxate": { acb: 3 }, "Homatropine": { acb: 3 }, "Hydroxyzine": { acb: 3 },
+            "Hyoscyamine": { acb: 3 }, "Imipramine": { acb: 3 }, "Levomepromazine": { acb: 3 }, "Meclizine": { acb: 3 },
+            "Mepenzolate": { acb: 3 }, "Mepyramine": { acb: 3 }, "Methdilazine": { acb: 3 }, "Methixene": { acb: 3 },
+            "Methocarbamol": { acb: 3 }, "Nortriptyline": { acb: 3 }, "Olanzapine": { acb: 3 }, "Orphenadrine": { acb: 3 },
+            "Oxybutynin": { acb: 3 }, "Paroxetine": { acb: 3 }, "Pericyazine": { acb: 3 }, "Perphenazine": { acb: 3 },
+            "Phenindamine": { acb: 3 }, "Pheniramine": { acb: 3 }, "Pipothiazine": { acb: 3 }, "Pirenzepine": { acb: 3 },
+            "Prochlorperazine": { acb: 3 }, "Procyclidine": { acb: 3 }, "Promazine": { acb: 3 }, "Promethazine": { acb: 3 },
+            "Propantheline": { acb: 3 }, "Propiverine": { acb: 3 }, "Protriptyline": { acb: 3 }, "Quetiapine": { acb: 3 },
+            "Scopolamine": { acb: 3 }, "Solifenacin": { acb: 3 }, "Thioridazine": { acb: 3 }, "Tiotropium": { acb: 3 },
+            "Tolterodine": { acb: 3 }, "Trifluoperazine": { acb: 3 }, "Triflupromazine": { acb: 3 }, "Trihexyphenidyl": { acb: 3 },
+            "Trimipramine": { acb: 3 }, "Tripelennamine": { acb: 3 }, "Triprolidine": { acb: 3 }, "Trospium": { acb: 3 },
+
+            // --- ACB Score 2: Moderate Burden ---
+            "Amantadine": { acb: 2 }, "Carbamazepine": { acb: 2 }, "Cyclobenzaprine": { acb: 2 }, "Loxapine": { acb: 2 },
+            "Meperidine": { acb: 2 }, "Methotrimeprazine": { acb: 2 }, "Molindone": { acb: 2 }, "Oxcarbazepine": { acb: 2 },
+            "Pimozide": { acb: 2 },
+
+            // --- ACB Score 1: Low Burden ---
+            "Alimemazine": { acb: 1 }, "Alprazolam": { acb: 1 }, "Alverine": { acb: 1 }, "Aminophylline": { acb: 1 },
+            "Ampicillin": { acb: 1 }, "Aripiprazole": { acb: 1 }, "Asenapine": { acb: 1 }, "Atenolol": { acb: 1 },
+            "Azelastine nasal": { acb: 1 }, "Azelastine ophthalmic": { acb: 1 }, "Baclofen": { acb: 1 },
+            "Beclometasone dipropionate": { acb: 1 }, "Bromocriptine": { acb: 1 }, "Bupropion": { acb: 1 }, "Captopril": { acb: 1 },
+            "Carbidopa-levodopa": { acb: 1 }, "Celecoxib": { acb: 1 }, "Cetirizine": { acb: 1 }, "Chlorambucil": { acb: 1 },
+            "Chlordiazepoxide": { acb: 1 }, "Chloroquine": { acb: 1 }, "Chlortalidone": { acb: 1 }, "Ciclosporin": { acb: 1 },
+            "Cimetidine": { acb: 1 }, "Citalopram": { acb: 1 }, "Clindamycin": { acb: 1 }, "Clonazepam": { acb: 1 },
+            "Clorazepate": { acb: 1 }, "Codeine": { acb: 1 }, "Colchicine": { acb: 1 }, "Desloratadine": { acb: 1 },
+            "Diazepam": { acb: 1 }, "Digoxin": { acb: 1 }, "Dipyridamole": { acb: 1 }, "Disopyramide": { acb: 1 },
+            "Domperidone": { acb: 1 }, "Esomeprazole": { acb: 1 }, "Estazolam": { acb: 1 }, "Fentanyl": { acb: 1 },
+            "Fexofenadine": { acb: 1 }, "Flunitrazepam": { acb: 1 }, "Flurazepam": { acb: 1 }, "Fluvoxamine": { acb: 1 },
+            "Furosemide": { acb: 1 }, "Haloperidol": { acb: 1 }, "Hydralazine": { acb: 1 }, "Hydrocortisone": { acb: 1 },
+            "Hydrocodone": { acb: 1 }, "Iloperidone": { acb: 1 }, "Indomethacin": { acb: 1 }, "Ipratropium": { acb: 1 },
+            "Isosorbide dinitrate": { acb: 1 }, "Isosorbide mononitrate": { acb: 1 }, "Ketorolac": { acb: 1 },
+            "Lansoprazole": { acb: 1 }, "Levocetirizine": { acb: 1 }, "Loperamide": { acb: 1 }, "Loratadine": { acb: 1 },
+            "Lorazepam": { acb: 1 }, "Lormetazepam": { acb: 1 }, "Maprotiline": { acb: 1 }, "Metoclopramide": { acb: 1 },
+            "Metoprolol": { acb: 1 }, "Mianserin": { acb: 1 }, "Midazolam": { acb: 1 }, "Mirtazapine": { acb: 1 },
+            "Morphine": { acb: 1 }, "Nefopam": { acb: 1 }, "Nifedipine": { acb: 1 }, "Nitrazepam": { acb: 1 },
+            "Omeprazole": { acb: 1 }, "Oxazepam": { acb: 1 }, "Oxycodone": { acb: 1 }, "Paliperidone": { acb: 1 },
+            "Pantoprazole": { acb: 1 }, "Pethidine": { acb: 1 }, "Pizotifen": { acb: 1 }, "Prednisolone": { acb: 1 },
+            "Prednisone": { acb: 1 }, "Propafenone": { acb: 1 }, "Prazosin": { acb: 1 }, "Quinidine": { acb: 1 },
+            "Quinine": { acb: 1 }, "Ranitidine": { acb: 1 }, "Risperidone": { acb: 1 }, "Sertraline": { acb: 1 },
+            "Spironolactone": { acb: 1 }, "Temazepam": { acb: 1 }, "Theophylline": { acb: 1 }, "Tianeptine": { acb: 1 },
+            "Timolol": { acb: 1 }, "Topiramate": { acb: 1 }, "Tramadol": { acb: 1 }, "Trazodone": { acb: 1 },
+            "Triamterene": { acb: 1 }, "Triazolam": { acb: 1 }, "Venlafaxine": { acb: 1 }, "Warfarin": { acb: 1 },
+            "Zolpidem": { acb: 1 }, "Zopiclone": { acb: 1 }, "Zotepine": { acb: 1 },
+
+            // --- ACB Score 0: No/Negligible Burden ---
+            "5-hydroxytryptophan": { acb: 0 }, "Acetaminophen": { acb: 0 }, "Aciclovir": { acb: 0 }, "Allopurinol": { acb: 0 },
+            "Alendronate": { acb: 0 }, "Alfuzosin": { acb: 0 }, "Amiloride": { acb: 0 }, "Amiodarone": { acb: 0 }, "Amlodipine": { acb: 0 },
+            "Amoxicillin": { acb: 0 }, "Amoxicillin-clavulanate": { acb: 0 }, "Anastrozole": { acb: 0 }, "Apixaban": { acb: 0 },
+            "Aspirin": { acb: 0 }, "Atorvastatin": { acb: 0 }, "Azathioprine": { acb: 0 }, "Azithromycin": { acb: 0 },
+            "Benazepril": { acb: 0}, "Betahistine": { acb: 0 }, "Betamethasone": { acb: 0 }, "Bisacodyl": { acb: 0 }, "Bisoprolol": { acb: 0 },
+            "Budesonide": { acb: 0 }, "Bumetanide": { acb: 0 }, "Buspirone": { acb: 0 }, "Calcitriol": { acb: 0 }, "Calcium Carbonate": { acb: 0 },
+            "Candesartan": { acb: 0 }, "Capecitabine": { acb: 0 }, "Carvedilol": { acb: 0 }, "Cefuroxime": { acb: 0 }, "Cephalexin": { acb: 0 },
+            "Chlorpropamide": { acb: 0 }, "Cholecalciferol": { acb: 0 }, "Cholestyramine": { acb: 0 }, "Cilostazol": { acb: 0 }, "Ciprofloxacin": { acb: 0 },
+            "Clopidogrel": { acb: 0 }, "Co-codamol": { acb: 0 }, "Co-dydramol": { acb: 0 }, "Cyanocobalamin": { acb: 0 }, "Dabigatran": { acb: 0 },
+            "Dapagliflozin": { acb: 0 }, "Dexamethasone": { acb: 0 }, "Diclofenac": { acb: 0 }, "Diltiazem": { acb: 0 }, "Donepezil": { acb: 0 },
+            "Doxazosin": { acb: 0 }, "Duloxetine": { acb: 0 }, "Edoxaban": { acb: 0 }, "Empagliflozin": { acb: 0 }, "Enalapril": { acb: 0 },
+            "Enoxaparin": { acb: 0 }, "Entacapone": { acb: 0 }, "Eplerenone": { acb: 0 }, "Erythromycin": { acb: 0 }, "Escitalopram": { acb: 0 },
+            "Ethinylestradiol": { acb: 0 }, "Ezetimibe": { acb: 0 }, "Famotidine": { acb: 0 }, "Felodipine": { acb: 0 }, "Fenofibrate": { acb: 0 },
+            "Ferrous Sulfate/Fumarate": { acb: 0 }, "Finasteride": { acb: 0 }, "Flucloxacillin": { acb: 0 }, "Fluconazole": { acb: 0 },
+            "Fluoxetine": { acb: 0 }, "Fluticasone": { acb: 0 }, "Folic Acid": { acb: 0 }, "Fondaparinux": { acb: 0 }, "Formoterol": { acb: 0 },
+            "Fosfomycin": { acb: 0 }, "Gabapentin": { acb: 0 }, "Galantamine": { acb: 0 }, "Gliclazide": { acb: 0 }, "Glimepiride": { acb: 0 },
+            "Glipizide": { acb: 0 }, "Glyburide": { acb: 0 }, "Heparin": { acb: 0 }, "Hydrochlorothiazide": { acb: 0 }, "Ibuprofen": { acb: 0 },
+            "Indapamide": { acb: 0 }, "Insulin (all types)": { acb: 0 }, "Irbesartan": { acb: 0 }, "Itraconazole": { acb: 0 }, "Ivabradine": { acb: 0 },
+            "Ketoconazole": { acb: 0 }, "Labetalol": { acb: 0 }, "Lacidipine": { acb: 0 }, "Lactulose": { acb: 0 }, "Lamotrigine": { acb: 0 },
+            "Letrozole": { acb: 0 }, "Levetiracetam": { acb: 0 }, "Levodopa": { acb: 0 }, "Levofloxacin": { acb: 0 }, "Levothyroxine": { acb: 0 },
+            "Linagliptin": { acb: 0 }, "Liothyronine": { acb: 0 }, "Liraglutide": { acb: 0 }, "Lisinopril": { acb: 0 }, "Lithium": { acb: 0 },
+            "Losartan": { acb: 0 }, "Macrogol": { acb: 0 }, "Magnesium supplements": { acb: 0 }, "Meloxicam": { acb: 0 }, "Memantine": { acb: 0 },
+            "Mesalazine": { acb: 0 }, "Metformin": { acb: 0 }, "Methadone": { acb: 0 }, "Methotrexate": { acb: 0 }, "Methylphenidate": { acb: 0 },
+            "Methylprednisolone": { acb: 0 }, "Metolazone": { acb: 0 }, "Metronidazole": { acb: 0 }, "Miconazole": { acb: 0 }, "Minocycline": { acb: 0 },
+            "Montelukast": { acb: 0 }, "Moxifloxacin": { acb: 0 }, "Mycophenolate": { acb: 0 }, "Nabumetone": { acb: 0 }, "Nadolol": { acb: 0 },
+            "Naltrexone": { acb: 0 }, "Naproxen": { acb: 0 }, "Nebivolol": { acb: 0 }, "Nicorandil": { acb: 0 }, "Nitrofurantoin": { acb: 0 },
+            "Nizatidine": { acb: 0 }, "Norethisterone": { acb: 0 }, "Nystatin": { acb: 0 }, "Olmesartan": { acb: 0 }, "Ondansetron": { acb: 0 },
+            "Orlistat": { acb: 0 }, "Oseltamivir": { acb: 0 }, "Penicillin V": { acb: 0 }, "Perindopril": { acb: 0 }, "Phenobarbital": { acb: 0 },
+            "Phenytoin": { acb: 0 }, "Pioglitazone": { acb: 0 }, "Potassium Chloride": { acb: 0 }, "Pramipexole": { acb: 0 }, "Prasugrel": { acb: 0 },
+            "Pravastatin": { acb: 0 }, "Pregabalin": { acb: 0 }, "Probenecid": { acb: 0 }, "Progesterone": { acb: 0 }, "Propranolol": { acb: 0 },
+            "Propylthiouracil": { acb: 0 }, "Pseudoephedrine": { acb: 0 }, "Pyrazinamide": { acb: 0 }, "Rabeprazole": { acb: 0 }, "Raloxifene": { acb: 0 },
+            "Ramipril": { acb: 0 }, "Repaglinide": { acb: 0 }, "Rifampicin": { acb: 0 }, "Risedronate": { acb: 0 }, "Rivastigmine": { acb: 0 },
+            "Rivaroxaban": { acb: 0 }, "Ropinirole": { acb: 0 }, "Rosiglitazone": { acb: 0 }, "Rosuvastatin": { acb: 0 }, "Salbutamol": { acb: 0 },
+            "Salmeterol": { acb: 0 }, "Saxagliptin": { acb: 0 }, "Selegiline": { acb: 0 }, "Senna": { acb: 0 }, "Sildenafil": { acb: 0 },
+            "Simvastatin": { acb: 0 }, "Sitagliptin": { acb: 0 }, "Sodium Bicarbonate": { acb: 0 }, "Sodium Cromoglicate": { acb: 0 },
+            "Sodium Fusidate": { acb: 0 }, "Sodium Picosulfate": { acb: 0 }, "Sodium Valproate": { acb: 0 }, "Sotalol": { acb: 0 },
+            "Sucralfate": { acb: 0 }, "Sulfasalazine": { acb: 0 }, "Sumatriptan": { acb: 0 }, "Tacrolimus": { acb: 0 }, "Tadalafil": { acb: 0 },
+            "Tamoxifen": { acb: 0 }, "Tamsulosin": { acb: 0 }, "Telmisartan": { acb: 0 }, "Tenofovir": { acb: 0 }, "Terazosin": { acb: 0 },
+            "Terbinafine": { acb: 0 }, "Testosterone": { acb: 0 }, "Thyroxine": { acb: 0 }, "Ticagrelor": { acb: 0 }, "Tinzaparin": { acb: 0 },
+            "Torasemide": { acb: 0 }, "Trimethoprim": { acb: 0 }, "Ursodeoxycholic acid": { acb: 0 }, "Valaciclovir": { acb: 0 },
+            "Valganciclovir": { acb: 0 }, "Valsartan": { acb: 0 }, "Vancomycin": { acb: 0 }, "Vardenafil": { acb: 0 }, "Varenicline": { acb: 0 },
+            "Verapamil": { acb: 0 }, "Vildagliptin": { acb: 0 }, "Vitamin D": { acb: 0 }, "Zidovudine": { acb: 0 }, "Zinc supplements": { acb: 0 },
+            "Zoledronic acid": { acb: 0 },
+
+            // --- ACB Score Unknown/Not Applicable (Included for Beers/STOPP lists) ---
+            "Eszopiclone": { acb: null }, // Beers drug (Z-drug)
+            "Estrogens (systemic/oral)": { acb: null }, // Beers - class/concept
+            "Sliding scale insulin": { acb: null }, // Beers - practice/concept
+            "Zaleplon": { acb: null }, // Beers drug (Z-drug)
+            "Buprenorphine": { acb: null }, // Example Opioid for class check (ACB may vary/be low)
+
+            // --- Placeholders for logic checks - DO NOT INCLUDE IN DROPDOWN ---
+            "Dementia": { condition: true }, "Falls": { condition: true }, "Hypoglycemia": { condition: true },
+            "Renal Impairment": { condition: true }, "Severe Renal Impairment": { condition: true }, "Moderate Renal Impairment": { condition: true },
+            "Long-term Use": { condition: true }, "Hypertension": { condition: true }, "Gout": { condition: true },
+            "Constipation": { condition: true }, "Asthma": { condition: true },
+            // Classes used in logic
+            "Antipsychotics": { class: true }, "Benzodiazepines": { class: true }, "Gabapentinoids": { class: true },
+            "Potassium-sparing diuretics": { class: true }, "Thiazide Diuretic": { class: true }, "Opioids": { class: true },
+            "NSAIDs": { class: true }, "SSRIs": { class: true }, "Sulfonylureas": { class: true }, "PPI (Proton Pump Inhibitors)": { class: true },
+            "Corticosteroids": { class: true }, "Anticholinergics": { class: true }, "Loop Diuretic": { class: true },
+            "Neuroleptics": { class: true }, "Vasodilator drugs": { class: true }, "ACE inhibitors": { class: true },
+            "Calcium Channel Blocker": { class: true }, "Beta-blocker": { class: true }, "Duplicate drug class": { class: true }, "CNS Depressants": { class: true }
+            // Trimethoprim is listed as a drug with ACB 0, also used in interactions
+        };
     const beersList = {
-      "Amitriptyline": "High anticholinergic effects, risk of confusion, dry mouth, constipation.",
-      "Doxepin": "Strong anticholinergic properties.",
-      "Diphenhydramine": "Highly anticholinergic, increased risk of confusion and falls.",
-      "Meperidine": "Risk of neurotoxicity, especially in renal impairment.",
-      "Indomethacin": "Higher risk of GI bleeding than other NSAIDs.",
-      "Flurazepam": "Long half-life benzodiazepine, increased sedation and fall risk.",
-      "Diazepam": "Long-acting benzodiazepine, risk of cognitive impairment and falls.",
-      "Nitrofurantoin": "Avoid in patients with CrCl < 30 mL/min due to pulmonary toxicity risk.",
-      "Cyclobenzaprine": "Anticholinergic side effects, sedation.",
-      "Methocarbamol": "Sedative effects, increased fall risk.",
-      "Hydroxyzine": "Strong anticholinergic effects.",
-      "Propoxyphene": "Weak analgesic, serious cardiac effects.",
-      "Pentazocine": "CNS effects like hallucinations, confusion.",
-      "Estrogens (oral)": "Risk of breast and endometrial cancer, not cardioprotective.",
-      "Barbiturates": "High risk of dependence, cognitive impairment.",
-      "Chlorpropamide": "Risk of prolonged hypoglycemia.",
-      "Glyburide": "High risk of severe hypoglycemia in elderly.",
-      "Metoclopramide": "Extrapyramidal effects, tardive dyskinesia.",
-      "Disopyramide": "May induce heart failure, anticholinergic.",
-      "Trimethobenzamide": "Limited efficacy, extrapyramidal effects."
-    };
+            // Anticholinergics
+            "Amitriptyline": "High anticholinergic burden; risk of confusion, dry mouth, constipation, urinary retention. Avoid.",
+            "Chlorphenamine": "Highly anticholinergic; clearance reduced with age. Risk of confusion, dry mouth, constipation. Avoid.",
+            "Cyclobenzaprine": "Anticholinergic effects, sedation, fracture risk. Avoid.",
+            "Diphenhydramine": "Highly anticholinergic; risk of confusion, sedation, falls. Avoid oral use.",
+            "Doxepin": ">6 mg/day: Highly anticholinergic. Avoid.",
+            "Hydroxyzine": "Highly anticholinergic; clearance reduced. Avoid.",
+            "Meclizine": "Highly anticholinergic. Avoid.",
+            "Oxybutynin": "Anticholinergic effects. Avoid unless lower-risk alternatives ineffective.",
+            "Paroxetine": "Highly anticholinergic, sedating. Avoid.",
+            "Promethazine": "Highly anticholinergic. Avoid.",
+            "Scopolamine": "Highly anticholinergic. Avoid.",
+            "Benztropine": "Highly anticholinergic. Avoid.",
+            "Trihexyphenidyl": "Highly anticholinergic. Avoid.",
+            "Tolterodine": "Anticholinergic effects. Avoid unless lower-risk alternatives ineffective.",
+
+            // Opioids
+            "Meperidine": "Not effective at oral doses, risk of neurotoxicity (delirium, seizures). Avoid.",
+            "Codeine": "Genetic variations in metabolism can cause intoxication or lack of efficacy. Use cautiously, consider alternatives.",
+            "Morphine": "Use cautiously, start low, go slow. Increased risk of sedation, constipation, respiratory depression.",
+            "Tramadol": "Risk of hypoglycemia, seizures, serotonin syndrome (esp. with SSRIs/SNRIs). Use cautiously.",
+
+            // Benzodiazepines & Z-drugs (Zolpidem, Eszopiclone, Zaleplon)
+            "Alprazolam": "Risk of cognitive impairment, delirium, falls, fractures, MVA. Avoid.",
+            "Diazepam": "Risk of cognitive impairment, delirium, falls, fractures, MVA. Avoid.",
+            "Flurazepam": "Long half-life, risk of prolonged sedation, falls. Avoid.",
+            "Zolpidem": "Risk similar to benzodiazepines (delirium, falls, fractures). Avoid.",
+            "Eszopiclone": "Risk similar to benzodiazepines (delirium, falls, fractures). Avoid.",
+            "Zaleplon": "Risk similar to benzodiazepines (delirium, falls, fractures). Avoid.",
+            "Lorazepam": "Risk similar to other benzodiazepines. Avoid long-term use.",
+            "Clonazepam": "Risk similar to other benzodiazepines. Avoid long-term use.",
+            "Temazepam": "Risk similar to other benzodiazepines. Avoid long-term use.",
+
+            // Antipsychotics (First and Second Gen)
+            "Haloperidol": "Avoid use for behavioral problems of dementia/delirium unless non-pharm failed and patient is threat. Increased CVA risk.",
+            "Olanzapine": "Avoid use for behavioral problems of dementia/delirium (see Haloperidol). High metabolic risk.",
+            "Risperidone": "Avoid use for behavioral problems of dementia/delirium (see Haloperidol).",
+            "Quetiapine": "Avoid use for behavioral problems of dementia/delirium (see Haloperidol). Moderate metabolic risk.",
+
+            // NSAIDs
+            "Indomethacin": "High risk of GI bleeding, PUD, AKI, ↑BP. Avoid chronic use.",
+            "Ketorolac": "High risk GI bleeding, PUD, AKI. Avoid parenteral/oral.",
+            "Ibuprofen": "Chronic use: Risk of GI bleeding, PUD, AKI, ↑BP, fluid retention. Use lowest effective dose for shortest duration.",
+            "Naproxen": "Chronic use: Risk of GI bleeding, PUD, AKI, ↑BP, fluid retention. Use lowest effective dose for shortest duration.",
+            "Diclofenac": "Chronic use: Risk of GI bleeding, PUD, AKI, ↑BP, fluid retention. Use lowest effective dose for shortest duration.",
+            "Meloxicam": "Chronic use: Risk of GI bleeding, PUD, AKI, ↑BP, fluid retention. Use lowest effective dose for shortest duration.",
+            "Celecoxib": "Lower GI risk than non-selective NSAIDs, but still carries risk of AKI, HF exacerbation. Use lowest effective dose for shortest duration.",
+
+            // Other problematic drugs
+            "Nitrofurantoin": "Avoid long-term suppression; pulmonary toxicity risk. Avoid if CrCl < 30 mL/min.",
+            "Metoclopramide": "Risk of extrapyramidal effects (tardive dyskinesia). Avoid unless for gastroparesis.",
+            "Glyburide": "High risk of severe prolonged hypoglycemia. Avoid.",
+            "Glimepiride": "Higher risk of severe prolonged hypoglycemia than glipizide. Avoid.",
+            "Chlorpropamide": "High risk of prolonged hypoglycemia, SIADH. Avoid.",
+            "Sliding scale insulin": "Risk of hypoglycemia without improvement in hyperglycemia management vs basal/bolus. Avoid sole use.",
+            "Omeprazole": "Risk of C. difficile, bone loss/fractures. Avoid scheduled use > 8 weeks unless high-risk (e.g., chronic NSAID use, Barrett's).",
+            "Lansoprazole": "Risk of C. difficile, bone loss/fractures. Avoid scheduled use > 8 weeks unless high-risk.",
+            "Pantoprazole": "Risk of C. difficile, bone loss/fractures. Avoid scheduled use > 8 weeks unless high-risk.",
+            "Digoxin": "Avoid as first-line for Afib/HF. Avoid initial doses > 0.125 mg/day (use lower in CKD). Decreased renal clearance increases toxicity risk.",
+            "Amiodarone": "Avoid as first-line for Afib unless patient has HF or LVH. High toxicity risk (pulmonary, thyroid, liver).",
+            "Spironolactone": ">25 mg/day: Risk of hyperkalemia, esp. with ACEi/ARB or CKD. Avoid initiating in patients with K+ >5.0 or eGFR <30.",
+            "Estrogens (systemic/oral)": "Carcinogenic potential (breast, endometrium), lack of cardio/cognitive protection. Avoid systemic estrogen for prevention.",
+            "Methocarbamol": "Poorly tolerated (anticholinergic, sedation, fracture risk). Effectiveness questionable. Avoid."
+          };
     const stoppCombinations = [
-      {
-        combination: ["Benzodiazepines", "Opioids"],
-        risk: "Profound sedation, respiratory depression, coma, and death."
-      },
-      {
-        combination: ["Anticholinergics", "Dementia"],
-        risk: "Worsening cognitive impairment and confusion."
-      },
-      {
-        combination: ["NSAIDs", "Corticosteroids"],
-        risk: "Increased risk of gastrointestinal bleeding or ulcers."
-      },
-      {
-        combination: ["NSAIDs", "Hypertension"],
-        risk: "Exacerbation of hypertension and renal damage."
-      },
-      {
-        combination: ["Digoxin", "Renal Impairment"],
-        risk: "Increased risk of digoxin toxicity."
-      },
-      {
-        combination: ["Warfarin", "NSAIDs"],
-        risk: "Significant bleeding risk due to enhanced anticoagulation."
-      },
-      {
-        combination: ["SSRIs", "NSAIDs"],
-        risk: "Increased gastrointestinal bleeding risk."
-      },
-      {
-        combination: ["CNS Depressants", "Falls"],
-        risk: "Increased fall risk due to sedation."
-      },
-      {
-        combination: ["Sulfonylureas", "Hypoglycemia"],
-        risk: "Prolonged hypoglycemia, especially in elderly."
-      },
-      {
-        combination: ["PPI (Proton Pump Inhibitors)", "Long-term Use"],
-        risk: "Risk of bone fractures and C. difficile infection."
-      },
-      {
-        combination: ["Digoxin", "Renal Impairment"],
-        risk: "STOPP: Avoid Digoxin >125 mcg/day if renal function is impaired (eGFR < 50)."
-      },
-      {
-        combination: ["Thiazide Diuretic", "Gout"],
-        risk: "STOPP: Thiazide use in patients with history of gout can precipitate attacks."
-      },
-      {
-        combination: ["Flurazepam", "Long-term Use"],
-        risk: "STOPP: Long-term use of long-acting benzodiazepines (e.g., flurazepam) increases risk of sedation, falls, and cognitive decline."
-      },
-      {
-        combination: ["Anticholinergics", "Antipsychotics"],
-        risk: "Increased risk of cognitive decline and falls."
-      },
-      {
-        combination: ["ACE inhibitors", "Potassium-sparing diuretics"],
-        risk: "Increased risk of hyperkalemia."
-      },
-      {
-        combination: ["Opioids", "Gabapentinoids"],
-        risk: "Increased risk of respiratory depression and sedation."
-      }
-    ];
+            // Drug-Drug Interactions
+            { combination: ["Benzodiazepines", "Opioids"], risk: "STOPP: Risk of severe sedation and respiratory depression." },
+            { combination: ["Warfarin", "NSAIDs"], risk: "STOPP: Risk of major hemorrhage." },
+            { combination: ["ACE inhibitors", "Potassium-sparing diuretics"], risk: "STOPP: Risk of hyperkalaemia (K+ > 5.5 mmol/L)." },
+            { combination: ["SSRIs", "NSAIDs"], risk: "STOPP: Increased risk of gastrointestinal bleeding, especially if history of PUD or age >65." },
+            { combination: ["Antipsychotics", "Anticholinergics"], risk: "STOPP: Additive anticholinergic toxicity, risk of delirium, constipation, urinary retention." },
+            { combination: ["Opioids", "Gabapentinoids"], risk: "STOPP: Increased risk of respiratory depression and sedation." },
+            { combination: ["Corticosteroids", "NSAIDs"], risk: "STOPP: Increased risk of peptic ulcer disease/bleeding." },
+            { combination: ["Digoxin", "Verapamil"], risk: "STOPP: Risk of digoxin toxicity (Verapamil increases Digoxin levels)." },
+            { combination: ["Loop Diuretic", "NSAIDs"], risk: "STOPP: Risk of reduced diuretic efficacy and potential nephrotoxicity, especially with dehydration or heart failure." },
+            { combination: ["Warfarin", "Amiodarone"], risk: "STOPP: Increased risk of bleeding (Amiodarone inhibits Warfarin metabolism)." },
+            { combination: ["Methotrexate", "NSAIDs"], risk: "STOPP: Increased risk of methotrexate toxicity (NSAIDs reduce renal excretion)." },
+            { combination: ["Warfarin", "Trimethoprim"], risk: "STOPP: Increased risk of bleeding (Trimethoprim inhibits Warfarin metabolism)." },
+            { combination: ["ACE inhibitors", "Trimethoprim"], risk: "STOPP: Increased risk of hyperkalemia." },
+
+            // Drug-Disease/Condition Interactions (Needs condition inputs or context)
+            // NOTE: Conditions like Dementia, Constipation, Hypertension, Gout, Asthma are currently HARDCODED as FALSE in the evaluation logic.
+            //       Form inputs would be needed for these checks to be practically useful.
+            { combination: ["Anticholinergics", "Dementia"], risk: "STOPP: Risk of worsening cognitive impairment/delirium." },
+            { combination: ["Anticholinergics", "Constipation"], risk: "STOPP: Risk of worsening constipation, potential for impaction." },
+            { combination: ["NSAIDs", "Hypertension"], risk: "STOPP: Risk of exacerbation of hypertension or fluid retention." },
+            { combination: ["NSAIDs", "Gout"], risk: "STOPP: Risk of exacerbating gout (especially Aspirin >325mg/day; low-dose Aspirin usually acceptable)." },
+            { combination: ["Thiazide Diuretic", "Gout"], risk: "STOPP: Risk of precipitating gout." },
+            { combination: ["Beta-blocker", "Asthma"], risk: "STOPP: Non-selective beta-blockers (e.g., Propranolol) risk bronchospasm. Use cardioselective (e.g., Metoprolol, Bisoprolol) with caution if essential." },
+            { combination: ["Calcium Channel Blocker", "Constipation"], risk: "STOPP: Verapamil and Diltiazem (non-dihydropyridines) can worsen chronic constipation. Dihydropyridines (e.g., Amlodipine) less likely." },
+            { combination: ["Metformin", "Severe Renal Impairment"], risk: "STOPP: Avoid if eGFR < 30 mL/min/1.73m² due to lactic acidosis risk. Use with caution/review dose if eGFR 30-45." },
+            { combination: ["Digoxin", "Moderate Renal Impairment"], risk: "STOPP: Reduce dose if eGFR < 50 mL/min/1.73m² (e.g., max 62.5-125 mcg/day or alternate days). Risk of toxicity." },
+            { combination: ["Nitrofurantoin", "Severe Renal Impairment"], risk: "STOPP: Avoid if eGFR < 30 mL/min/1.73m² (lack of efficacy, increased toxicity)." },
+            { combination: ["Spironolactone", "Severe Renal Impairment"], risk: "STOPP: Avoid initiation if eGFR < 30 mL/min/1.73m² or K+ > 5.0 mmol/L. Use lower dose (max 25mg/day) and monitor K+ closely if eGFR 30-50." },
+            { combination: ["Benzodiazepines", "Falls"], risk: "STOPP: Risk of falls. Avoid long-term or regular use; short-term (2-4 weeks) may be acceptable if indicated." },
+            { combination: ["Neuroleptics", "Falls"], risk: "STOPP: Risk of falls (due to sedation, postural hypotension, extrapyramidal symptoms)." },
+            { combination: ["Vasodilator drugs", "Falls"], risk: "STOPP: Vasodilators known to cause postural hypotension (e.g., alpha-blockers like Prazosin, Terazosin; Nitrates) increase fall risk, especially on initiation or dose increase." },
+            { combination: ["CNS Depressants", "Falls"], risk: "STOPP: Increased fall risk due to sedation (includes sedative antihistamines, benzodiazepines, Z-drugs, antipsychotics, opioids)." },
+            { combination: ["Sulfonylureas", "Hypoglycemia"], risk: "STOPP: Prolonged hypoglycemia risk, especially long-acting ones (Glyburide, Chlorpropamide, Glimepiride)." },
+
+
+            // Duplicate/Inappropriate Duration
+            { combination: ["PPI (Proton Pump Inhibitors)", "Long-term Use"], risk: "STOPP: Avoid use > 8 weeks unless indicated (e.g., Barrett's, severe oesophagitis, chronic NSAID user at high GI risk). Attempt dose reduction or cessation. Risk of fractures, C. diff., hypomagnesemia." },
+            { combination: ["Duplicate drug class"], risk: "STOPP: Avoid duplicate drug class therapy (e.g., two NSAIDs, two SSRIs, two ACE inhibitors) without clear justification." }
+          ];
+
+    // Filtered list of selectable medication names
+    const selectableMedications = Object.keys(medicationData)
+            .filter(name => medicationData[name] && (typeof medicationData[name].acb === 'number' || medicationData[name].acb === null))
+            .sort();
+
+
+    // --- HELPER FUNCTIONS ---
+
+    // Function to add a new medication input row (NOW uses Autocomplete)
     function addMedicationField() {
-      const container = document.getElementById('medicationContainer');
-      const div = document.createElement('div');
-      const id = Date.now();
-      div.innerHTML = `
-        <label>Medication:
-          <select class="med-select" name="medication" onchange="document.getElementById('acb_${id}').value = medicationData[this.value]?.acb || 0">
-            <option value="">-- Select Medicine --</option>
-            ${Object.keys(medicationData).sort().map(name => `<option value="${name}">${name}</option>`).join('')}
-          </select>
-        </label>
-        <label>ACB Score: <input type="number" name="acb_score" id="acb_${id}" readonly /></label>
-      `;
-      container.appendChild(div);
-      $(div).find(".med-select").select2({ placeholder: "Search or select a medicine", width: '100%' });
-    }
-    document.getElementById('patientForm').addEventListener('submit', function (e) {
-      e.preventDefault();
-      document.getElementById('loadingSpinner').style.display = 'block';
-      setTimeout(() => {
-        const name = document.querySelector('input[name="patient_name"]').value || "Patient";
-        const age = parseInt(document.querySelector('input[name="age"]').value);
-        const egfr = parseFloat(document.querySelector('input[name="egfr"]').value);
-        const falls = document.querySelector('select[name="falls_history"]').value;
-        const meds = Array.from(document.querySelectorAll('select[name="medication"]')).map(m => m.value);
-        const acbScores = Array.from(document.querySelectorAll('input[name="acb_score"]')).map(a => parseInt(a.value) || 0);
-        const totalACB = acbScores.reduce((a, b) => a + b, 0);
-        let acbText = `Total ACB Score: ${totalACB}\n`;
-        meds.forEach((med, i) => {
-          if (acbScores[i] > 0) acbText += `⚠ ${med}: ACB ${acbScores[i]}\n`;
-        });
-        if (totalACB >= 3) acbText += '<span class="risky">⚠ High total ACB score.</span>\n';
-        if (age > 65 && totalACB > 0) acbText += '<span class="risky">⚠ Elderly + ACB meds = cognitive risk.</span>\n';
-        if (falls === "Yes" && totalACB > 0) acbText += '<span class="risky">⚠ Fall history + ACB risk.</span>\n';
-        if (acbText.trim() === '') acbText = '<span class="safe">✅ No ACB risks found.</span>';
-        let beersWarnings = meds
-          .filter(m => beersList[m])
-          .map(m => `<span class="risky">⚠ <strong>${m}:</strong> ${beersList[m]}</span>`);
-        let beersText = beersWarnings.length
-          ? beersWarnings.join('\n')
-          : '<span class="safe">✅ No Beers Criteria risks found for selected medications.</span>';
-        let stoppText = '';
-        if (!isNaN(egfr)) {
-          if (egfr >= 90) {
-            stoppText += '<span class="safe">✅ Normal renal function (eGFR ≥ 90).</span>\n';
-          } else if (egfr >= 60) {
-            stoppText += '<span class="safe">⚠ Mild renal impairment (eGFR 60–89).</span>\n';
-          } else if (egfr >= 30) {
-            stoppText += '<span class="risky">⚠ Moderate renal impairment (eGFR 30–59).</span>\n';
-          } else {
-            stoppText += '<span class="risky">⚠ Severe renal impairment (eGFR &lt; 30). Dose adjustment may be needed.</span>\n';
-          }
-        }
-        stoppCombinations.forEach(({ combination, risk }) => {
-          const [med1, med2] = combination.map(m => m.toLowerCase());
-          const selectedMeds = meds.map(m => m.toLowerCase());
-          if (selectedMeds.includes(med1) && selectedMeds.includes(med2)) {
-            stoppText += `<span class="risky">⚠ ${combination.join(" + ")}\nReason: ${risk}</span>\n`;
-          }
-        });
-        if (stoppText.trim() === '') stoppText = '<span class="safe">✅ No STOPP/START warnings found.</span>';
-        document.querySelector('#resultsACB pre').innerHTML = `<strong> ACB Evaluation</strong>\n\n${acbText}`;
-        document.querySelector('#resultsBeers pre').innerHTML = `<strong> Beers Criteria Notes</strong>\n\n${beersText}`;
-        document.querySelector('#resultsSTOPP pre').innerHTML = `<strong> STOPP/START Evaluation</strong>\n\n${stoppText}`;
-        document.getElementById('loadingSpinner').style.display = 'none';
-        document.getElementById('resultsACB').scrollIntoView({ behavior: 'smooth' });
-        document.getElementById('downloadBtn').style.display = 'block';
-      }, 300);
-    });
-    document.getElementById('downloadBtn').addEventListener('click', function () {
-      const name = document.querySelector('input[name="patient_name"]').value || "Patient";
-      const age = document.querySelector('input[name="age"]').value;
-      const sex = document.querySelector('select[name="sex"]').value;
+        const container = document.getElementById('medicationContainer');
+        const div = document.createElement('div');
+        const id = Date.now(); // Unique ID for the elements in this row
 
-      const acbHTML = document.querySelector('#resultsACB pre').innerHTML;
-      const beersHTML = document.querySelector('#resultsBeers pre').innerHTML;
-      const stoppHTML = document.querySelector('#resultsSTOPP pre').innerHTML;
-
-      const printContent = `
-        <html>
-          <head>
-            <title>Medication Safety Report</title>
-            <style>
-              body { font-family: 'Arial', sans-serif; color: #333; }
-              h1 { text-align: center; color: #2c3e50; }
-              h3 { color: #27ae60; }
-              .beers { color: #2980b9; }
-              .stopp { color: #c0392b; }
-              .section { background: #f4f4f4; padding: 10px; border-left: 4px solid; }
-              .patient-info { text-align: left; }
-            </style>
-          </head>
-          <body>
-            <h1>Drug Safety Calculator Report</h1>
-            <div class="patient-info">
-              <h2>${name}</h2>
-              <p>Age: ${age}</p>
-              <p>Sex: ${sex}</p>
-              <h3><strong>Date:</strong> ${new Date().toLocaleDateString()}</h3>
+        div.classList.add('med-row');
+        // Note: No <select> element anymore
+        div.innerHTML = `
+            <div class="med-input-group">
+                <label for="med_${id}">Medication:</label>
+                <input type="text" id="med_${id}" class="med-input" name="medication_name" placeholder="Type Chars to search..." autocomplete="on">
+                <div class="autocomplete-suggestions" id="suggestions_${id}"></div>
+                <input type="hidden" name="medication" id="med_value_${id}">
             </div>
+            <div class="acb-input-group">
+                <label for="acb_${id}">ACB Score:</label>
+                <input type="text" name="acb_score" id="acb_${id}" readonly placeholder="ACB" />
+            </div>
+            <button type="button" class="delete-med-btn" title="Remove this medication">🗑️</button>
+        `;
 
-            <h4 class="section" style="border-left-color: #27ae60;"> ACB Scale Evaluation</h4>
-            <div class="section">${acbHTML}</div>
+        container.appendChild(div);
 
-            <h4 class="section beers" style="border-left-color: #2980b9;"> Beers Criteria Evaluation</h4>
-            <div class="section beers">${beersHTML}</div>
+        // Autocomplete listeners are added via delegation later
+    }
 
-            <h4 class="section stopp" style="border-left-color: #c0392b;"> STOPP/START Evaluation</h4>
-            <div class="section stopp">${stoppHTML}</div>
+    // Function to clear evaluation results display
+    function clearResults() {
+        document.querySelector('#resultsACB pre').innerHTML = '';
+        document.querySelector('#resultsBeers pre').innerHTML = '';
+        document.querySelector('#resultsSTOPP pre').innerHTML = '';
+        document.getElementById('resultsACB').classList.remove('visible');
+        document.getElementById('resultsBeers').classList.remove('visible');
+        document.getElementById('resultsSTOPP').classList.remove('visible');
+        document.getElementById('downloadBtn').style.display = 'none';
+    }
 
-            <p style="margin-top: 20px; font-style: italic;">
-              Generated using ACB Scale, Beers Criteria, and STOPP/START guidelines.
-            </p>
-          </body>
-        </html>
-      `;
 
-      const printWindow = window.open('', '_blank');
-      printWindow.document.open();
-      printWindow.document.write(printContent);
-      printWindow.document.close();
+    // --- AUTOCOMPLETE LOGIC ---
+    function showSuggestions(inputElement, suggestionsElement) {
+        const value = inputElement.value.toLowerCase();
+        suggestionsElement.innerHTML = ''; // Clear previous suggestions
+        suggestionsElement.style.display = 'none';
 
-      printWindow.onload = function () {
-        printWindow.print();
-        printWindow.close();
-      };
+        if (value.length < 1) return; // Only search if chars typed
+
+        const filteredMeds = selectableMedications.filter(med =>
+            med.toLowerCase().includes(value)
+        );
+
+        if (filteredMeds.length > 0) {
+            filteredMeds.slice(0, 100).forEach(med => { // Show max 100 suggestions
+                const div = document.createElement('div');
+                div.textContent = med;
+                div.addEventListener('click', () => {
+                    inputElement.value = med; // Set display value
+                    // Find the hidden input sibling and set its value
+                    const hiddenInput = inputElement.nextElementSibling.nextElementSibling; // Input -> SuggestionsDiv -> HiddenInput
+                    if (hiddenInput && hiddenInput.name === 'medication') {
+                         hiddenInput.value = med;
+                    } else {
+                         console.error("Could not find hidden input for", inputElement.id);
+                    }
+                    updateAcbScore(inputElement, med);
+                    suggestionsElement.innerHTML = '';
+                    suggestionsElement.style.display = 'none';
+                    clearResults(); // Clear results as selection changed
+                });
+                suggestionsElement.appendChild(div);
+            });
+            suggestionsElement.style.display = 'block';
+        }
+    }
+
+    function updateAcbScore(inputElement, selectedValue) {
+        // Find the corresponding ACB input in the same row
+        const row = inputElement.closest('.med-row');
+        const acbInput = row.querySelector('input[name="acb_score"]');
+        if (!acbInput) return;
+
+        if (selectedValue === "") {
+            acbInput.value = '';
+            acbInput.placeholder = "ACB";
+        } else {
+            const score = medicationData[selectedValue]?.acb;
+            if (score === null) {
+                acbInput.value = "N/A";
+                acbInput.placeholder = "N/A";
+            } else if (typeof score === 'number') {
+                acbInput.value = score;
+                acbInput.placeholder = "ACB";
+            } else {
+                // Should only happen if selectedValue isn't in medicationData
+                acbInput.value = '';
+                acbInput.placeholder = "ACB";
+                 console.warn("Selected value not found in medicationData:", selectedValue);
+            }
+        }
+         // Also clear the hidden input if the text input is cleared or invalid
+         const hiddenInput = inputElement.nextElementSibling.nextElementSibling;
+         if (!selectedValue || medicationData[selectedValue] === undefined) {
+             if (hiddenInput && hiddenInput.name === 'medication') {
+                 hiddenInput.value = "";
+             }
+         }
+    }
+
+    // Event delegation for autocomplete input
+    document.getElementById('medicationContainer').addEventListener('input', function(e) {
+        if (e.target && e.target.classList.contains('med-input')) {
+            const suggestionsElement = e.target.nextElementSibling; // The div right after the input
+            if (suggestionsElement && suggestionsElement.classList.contains('autocomplete-suggestions')) {
+                 showSuggestions(e.target, suggestionsElement);
+                 // Clear hidden value if typing doesn't match a known drug eventually
+                 const hiddenInput = suggestionsElement.nextElementSibling;
+                 if(hiddenInput && hiddenInput.name === 'medication') {
+                      hiddenInput.value = ""; // Clear hidden until a suggestion is clicked
+                 }
+                 updateAcbScore(e.target, ""); // Clear ACB while typing new value
+            }
+        }
     });
-    addMedicationField();
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        const activeSuggestions = document.querySelector('.autocomplete-suggestions[style*="display: block"]');
+        if (activeSuggestions) {
+            const inputGroup = activeSuggestions.closest('.med-input-group');
+            // Hide if click is outside the input group containing the active suggestions
+            if (inputGroup && !inputGroup.contains(e.target)) {
+                activeSuggestions.innerHTML = '';
+                activeSuggestions.style.display = 'none';
+            }
+        }
+    });
+
+
+    // --- OTHER EVENT LISTENERS ---
+
+    // Add listener for deleting medication rows
+    document.getElementById('medicationContainer').addEventListener('click', function(e) {
+        if (e.target && e.target.classList.contains('delete-med-btn')) {
+            e.target.closest('.med-row').remove();
+            clearResults();
+        }
+    });
+
+    // Form submission and Evaluation logic
+    document.getElementById('patientForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        document.getElementById('loadingSpinner').style.display = 'block';
+        clearResults();
+
+        setTimeout(() => {
+            // --- Gather Patient Data ---
+             const name = document.querySelector('input[name="patient_name"]').value || "Patient";
+             const ageInput = document.querySelector('input[name="age"]');
+             const age = ageInput.value ? parseInt(ageInput.value) : NaN;
+             const egfrInput = document.querySelector('input[name="egfr"]');
+             const egfr = egfrInput.value ? parseFloat(egfrInput.value) : NaN;
+             const falls = document.querySelector('select[name="falls_history"]').value;
+             // **MODIFIED:** Get med names from the hidden input values
+             const meds = Array.from(document.querySelectorAll('input[name="medication"]')) // Target hidden inputs
+                                  .map(inputElement => inputElement.value)
+                                  .filter(medName => medName !== "" && medicationData[medName]); // Ensure it's a valid, selected med
+
+            // --- Calculate Total ACB ---
+            const acbScores = meds.map(med => {
+                const score = medicationData[med]?.acb;
+                return (typeof score === 'number') ? score : 0;
+            });
+            const totalACB = acbScores.reduce((sum, score) => sum + score, 0);
+
+            // --- ACB Evaluation ---
+            let acbText = `Total Anticholinergic Burden (ACB) Score: <strong>${totalACB}</strong>\n\nContributing Medications:\n`;
+            let acbMedsFound = false;
+            meds.forEach((med) => {
+                const score = medicationData[med]?.acb;
+                if (score !== null && score !== undefined && score > 0) {
+                    acbText += `   - ${med}: ACB ${score}\n`;
+                    acbMedsFound = true;
+                } else if (score === null) {
+                     acbText += `   - ${med}: ACB N/A\n`;
+                }
+            });
+            if (!acbMedsFound && totalACB === 0 && meds.length > 0) {
+               acbText += `   (None with ACB score > 0 among selected)\n`;
+            } else if (meds.length === 0) {
+                acbText += `   (No valid medications selected)\n`;
+            }
+
+
+            acbText += '\nOverall ACB Assessment:\n';
+            let acbWarnings = [];
+            if (totalACB >= 3) {
+                acbWarnings.push('<span class="risky">⚠ High total ACB score (&ge;3). Significantly increased risk of cognitive impairment, delirium, confusion, falls, constipation, urinary retention, and other anticholinergic adverse effects. Strongly consider deprescribing or substitution with lower ACB alternatives.</span>');
+            } else if (totalACB > 0) {
+                acbWarnings.push('⚠ Moderate/Low total ACB score (1-2). Monitor closely for anticholinergic effects (e.g., dry mouth, constipation, dizziness, confusion), especially if patient is frail, has cognitive impairment, or history of falls. Consider alternatives if symptoms occur.');
+            }
+
+            if (!isNaN(age) && age >= 65 && totalACB > 0) {
+                acbWarnings.push(`<span class="risky">⚠ Patient age (${age}) increases susceptibility to anticholinergic side effects, even at lower ACB scores.</span>`);
+            }
+            if (falls === "Yes" && totalACB > 0) {
+                acbWarnings.push('<span class="risky">⚠ Patient has a history of falls; any anticholinergic load (ACB > 0) further increases fall risk.</span>');
+            }
+
+            if (acbWarnings.length > 0) {
+                acbText += acbWarnings.join('\n');
+            } else {
+                 if (meds.length > 0) { // Only show safe message if meds were evaluated
+                      acbText += '<span class="safe">✅ Total ACB score is 0. Low risk from anticholinergic burden based on selected medications contributing to the score.</span>';
+                 } else {
+                      acbText += 'No medications evaluated for ACB score.';
+                 }
+            }
+            document.querySelector('#resultsACB pre').innerHTML = acbText;
+            document.getElementById('resultsACB').classList.add('visible');
+
+            // --- Beers Criteria Evaluation ---
+             let beersWarnings = meds
+               .filter(medName => beersList[medName]) // Check if the drug is in our Beers list
+               .map(medName => `<span class="risky">⚠ <strong>${medName} (Beers):</strong> ${beersList[medName]}</span>`);
+
+             // Specific checks for concepts/practices if selected
+             if (meds.includes("Sliding scale insulin")) {
+                 const ssiWarning = beersList["Sliding scale insulin"];
+                 if(ssiWarning && !beersWarnings.some(w => w.includes("Sliding scale insulin"))) { // Avoid duplicates if already added
+                     beersWarnings.push(`<span class="risky">⚠ <strong>Sliding scale insulin (Beers):</strong> ${ssiWarning}</span>`);
+                 }
+             }
+             if (meds.includes("Estrogens (systemic/oral)")) {
+                 const estrogenWarning = beersList["Estrogens (systemic/oral)"];
+                 if(estrogenWarning && !beersWarnings.some(w => w.includes("Estrogens"))) {
+                     beersWarnings.push(`<span class="risky">⚠ <strong>Estrogens (systemic/oral) (Beers):</strong> ${estrogenWarning}</span>`);
+                 }
+             }
+
+             let beersText;
+             if (beersWarnings.length > 0) {
+                 beersText = beersWarnings.join('\n\n'); // Separate warnings with double newline
+             } else {
+                  if (meds.length > 0) {
+                      beersText = '<span class="safe">✅ No specific high-risk medications according to the selected Beers Criteria® examples were found. (Note: This tool includes examples, not the exhaustive list. Clinical judgment is required).</span>';
+                  } else {
+                      beersText = 'No medications evaluated against Beers Criteria examples.';
+                  }
+             }
+
+            document.querySelector('#resultsBeers pre').innerHTML = beersText;
+            document.getElementById('resultsBeers').classList.add('visible');
+
+            // --- STOPP/START & Renal Evaluation ---
+             let stoppText = '';
+             stoppText += '<strong>Renal Function Assessment (based on eGFR):</strong>\n';
+             if (!isNaN(egfr)) {
+                 if (egfr >= 90) {
+                     stoppText += `<span class="safe">✅ Normal Function (eGFR ${egfr} mL/min/1.73m²).</span>\n`;
+                 } else if (egfr >= 60) {
+                     stoppText += `<span class="safe">✅ Mild Impairment (eGFR ${egfr} mL/min/1.73m²). Generally low risk for dose accumulation for most drugs.</span>\n`;
+                 } else if (egfr >= 30) {
+                     stoppText += `<span class="risky">⚠ Moderate Impairment (eGFR ${egfr} mL/min/1.73m²). Risk of drug accumulation. Review need/doses of renally cleared drugs (e.g., Digoxin, Gabapentin, Metformin, some antibiotics).</span>\n`;
+                 } else { // eGFR < 30
+                     stoppText += `<span class="risky">⚠ Severe Impairment (eGFR ${egfr} mL/min/1.73m²). High risk of accumulation/toxicity. Many drugs require significant dose reduction or are contraindicated (e.g., Metformin, Nitrofurantoin, certain NSAIDs). Consult renal dosing guides.</span>\n`;
+                 }
+             } else {
+                 stoppText += '⚠ eGFR not provided. Cannot assess renal function impact on medication safety. Renal dose adjustments may be necessary for certain drugs.\n';
+             }
+
+             stoppText += '\n<strong>Potential Issues (STOPP Criteria Examples):</strong>\n';
+             let interactionsFound = false;
+
+             // Define patient conditions based on form inputs and HARDCODED values
+             const patientConditions = {
+                 "Falls": falls === "Yes",
+                 "Renal Impairment": !isNaN(egfr) && egfr < 60, // Includes moderate and severe
+                 "Severe Renal Impairment": !isNaN(egfr) && egfr < 30,
+                 "Moderate Renal Impairment": !isNaN(egfr) && egfr >= 30 && egfr < 50, // Specifically for Digoxin check range
+                 // !!! HARDCODED CONDITIONS - NEED FORM INPUTS TO BE USEFUL !!!
+                 "Hypertension": false, "Gout": false, "Dementia": false,
+                 "Constipation": false, "Asthma": false,
+                 "Long-term Use": true // Placeholder for PPI check - assumes long term if PPI selected
+                 // Add Hypoglycemia check if needed, potentially linked to Sulfonylureas below
+             };
+
+             // Helper to check if any selected medication belongs to a class or is a specific drug
+             const checkClass = (className) => {
+                 if (typeof className !== 'string') return false;
+                 // Prioritize checking if the className itself is directly selected
+                  if (meds.includes(className)) return true;
+
+                 switch (className) {
+                     // Define drug lists for each class check
+                     case "Benzodiazepines": return meds.some(m => ["Alprazolam", "Diazepam", "Flurazepam", "Lorazepam", "Clonazepam", "Temazepam", "Midazolam", "Nitrazepam", "Oxazepam", "Triazolam", "Estazolam", "Flunitrazepam", "Lormetazepam", "Chlordiazepoxide", "Clorazepate"].includes(m));
+                     case "Opioids": return meds.some(m => ["Morphine", "Codeine", "Meperidine", "Oxycodone", "Hydrocodone", "Tramadol", "Fentanyl", "Methadone", "Buprenorphine"].includes(m));
+                     case "NSAIDs": return meds.some(m => ["Ibuprofen", "Naproxen", "Diclofenac", "Meloxicam", "Celecoxib", "Indomethacin", "Ketorolac", "Aspirin", "Nabumetone"].includes(m));
+                     case "Anticholinergics": return meds.some(m => (medicationData[m]?.acb ?? 0) >= 2); // Check drugs with ACB score 2 or 3
+                     case "Antipsychotics": return meds.some(m => ["Haloperidol", "Olanzapine", "Risperidone", "Quetiapine", "Aripiprazole", "Clozapine", "Perphenazine", "Trifluoperazine", "Chlorpromazine", "Levomepromazine", "Pimozide", "Loxapine", "Asenapine", "Iloperidone", "Paliperidone", "Zotepine", "Prochlorperazine", "Promazine", "Thioridazine"].includes(m));
+                     case "Gabapentinoids": return meds.some(m => ["Gabapentin", "Pregabalin"].includes(m));
+                     case "SSRIs": return meds.some(m => ["Paroxetine", "Fluvoxamine", "Sertraline", "Fluoxetine", "Citalopram", "Escitalopram"].includes(m));
+                     case "Potassium-sparing diuretics": return meds.some(m => ["Spironolactone", "Amiloride", "Triamterene", "Eplerenone"].includes(m));
+                     case "Corticosteroids": return meds.some(m => ["Prednisone", "Prednisolone", "Methylprednisolone", "Dexamethasone", "Hydrocortisone", "Beclometasone dipropionate"].includes(m)); // Systemic mostly
+                     case "Thiazide Diuretic": return meds.some(m => ["Hydrochlorothiazide", "Chlortalidone", "Indapamide", "Metolazone"].includes(m));
+                     case "PPI (Proton Pump Inhibitors)": return meds.some(m => ["Omeprazole", "Lansoprazole", "Pantoprazole", "Esomeprazole", "Rabeprazole"].includes(m));
+                     case "Loop Diuretic": return meds.some(m => ["Furosemide", "Bumetanide", "Torasemide"].includes(m));
+                     case "Neuroleptics": return checkClass("Antipsychotics"); // Alias
+                     case "Vasodilator drugs": return meds.some(m => ["Prazosin", "Terazosin", "Doxazosin", "Hydralazine", "Isosorbide dinitrate", "Isosorbide mononitrate"].includes(m)); // Add Nitroglycerin if applicable
+                     case "ACE inhibitors": return meds.some(m => ["Lisinopril", "Enalapril", "Ramipril", "Captopril", "Perindopril", "Benazepril"].includes(m)); // Add more if needed
+                     case "Calcium Channel Blocker": return meds.some(m => ["Amlodipine", "Nifedipine", "Felodipine", "Verapamil", "Diltiazem", "Lacidipine"].includes(m));
+                     case "Beta-blocker": return meds.some(m => ["Metoprolol", "Atenolol", "Bisoprolol", "Carvedilol", "Propranolol", "Labetalol", "Nebivolol", "Sotalol", "Nadolol", "Timolol"].includes(m));
+                     case "Sulfonylureas": return meds.some(m => ["Glyburide", "Glipizide", "Glimepiride", "Chlorpropamide", "Gliclazide"].includes(m));
+                      case "CNS Depressants": // Broad category for falls risk
+                          return checkClass("Benzodiazepines") || checkClass("Opioids") || checkClass("Antipsychotics") || checkClass("Gabapentinoids") ||
+                                 meds.some(m => ["Zolpidem", "Zopiclone", "Eszopiclone", "Zaleplon", // Z-drugs
+                                                 "Hydroxyzine", "Diphenhydramine", "Promethazine", "Chlorphenamine", "Doxylamine", // Sedating Antihistamines
+                                                 "Baclofen", "Cyclobenzaprine", "Methocarbamol", // Muscle Relaxants
+                                                 "Trazodone", "Mirtazapine" // Sedating Antidepressants
+                                                 ].includes(m));
+                     // Default case: check if the className itself is a specific drug in the list (already handled above)
+                     default:
+                         return false; // Not a defined class and not directly selected
+                 }
+             };
+
+             let reportedMessages = new Set(); // To avoid duplicate interaction messages
+             stoppCombinations.forEach(({ combination, risk }) => {
+                 const item1 = combination[0];
+                 const item2 = combination[1];
+                 let triggered = false;
+                 let messageKey = ''; // Unique key for this interaction type
+                 let message = '';
+
+                 const item1IsLogicKey = medicationData[item1]?.class || medicationData[item1]?.condition;
+                 const item2IsLogicKey = medicationData[item2]?.class || medicationData[item2]?.condition;
+
+                 // Drug-Drug Interaction (Neither item is a 'condition')
+                 if (!medicationData[item1]?.condition && !medicationData[item2]?.condition && item1 !== "Duplicate drug class") {
+                      if (checkClass(item1) && checkClass(item2)) {
+                          triggered = true;
+                          // Sort items alphabetically for consistent key
+                          const sortedItems = [item1, item2].sort();
+                          messageKey = `${sortedItems[0]}-${sortedItems[1]}`;
+                          message = `<span class="risky">⚠ ${item1} + ${item2}\n   ${risk}</span>\n`;
+                      }
+                 }
+                 // Drug-Condition Interaction (One item is a 'condition')
+                 else if (medicationData[item1]?.condition || medicationData[item2]?.condition) {
+                     const conditionName = medicationData[item1]?.condition ? item1 : item2;
+                     const drugOrClassName = (conditionName === item1) ? item2 : item1;
+
+                     if (patientConditions[conditionName] === true && checkClass(drugOrClassName)) {
+                         triggered = true;
+                         messageKey = `${drugOrClassName}-${conditionName}`;
+                         // Special message for PPI long-term use placeholder
+                         if (drugOrClassName === "PPI (Proton Pump Inhibitors)" && conditionName === "Long-term Use") {
+                              message = `<span class="risky">⚠ ${drugOrClassName} potentially used long-term (>8 weeks?)\n   ${risk}</span>\n`;
+                         } else {
+                              message = `<span class="risky">⚠ ${drugOrClassName} with ${conditionName}\n   ${risk}</span>\n`;
+                         }
+                     }
+                 }
+
+                 // Add message if triggered and not already reported
+                 if (triggered && !reportedMessages.has(messageKey)) {
+                     stoppText += message;
+                     reportedMessages.add(messageKey);
+                     interactionsFound = true;
+                 }
+             });
+
+             // Duplicate Class Check
+             const classCounts = {};
+             const drugClassesForDuplicateCheck = { // Map drugs to their classes for counting
+                  "NSAIDs": ["Ibuprofen", "Naproxen", "Diclofenac", "Meloxicam", "Celecoxib", "Indomethacin", "Ketorolac", "Aspirin", "Nabumetone"],
+                  "SSRIs": ["Paroxetine", "Fluvoxamine", "Sertraline", "Fluoxetine", "Citalopram", "Escitalopram"],
+                  "ACE inhibitors": ["Lisinopril", "Enalapril", "Ramipril", "Captopril", "Perindopril", "Benazepril"],
+                  "Benzodiazepines": ["Alprazolam", "Diazepam", "Flurazepam", "Lorazepam", "Clonazepam", "Temazepam", "Midazolam", "Nitrazepam", "Oxazepam", "Triazolam", "Estazolam", "Flunitrazepam", "Lormetazepam", "Chlordiazepoxide", "Clorazepate"],
+                  "Opioids": ["Morphine", "Codeine", "Meperidine", "Oxycodone", "Hydrocodone", "Tramadol", "Fentanyl", "Methadone", "Buprenorphine"],
+                  "Antipsychotics": ["Haloperidol", "Olanzapine", "Risperidone", "Quetiapine", "Aripiprazole", "Clozapine", "Perphenazine", "Trifluoperazine", "Chlorpromazine", "Levomepromazine", "Pimozide", "Loxapine", "Asenapine", "Iloperidone", "Paliperidone", "Zotepine", "Prochlorperazine", "Promazine", "Thioridazine"],
+                  "Loop Diuretic": ["Furosemide", "Bumetanide", "Torasemide"],
+                  "Thiazide Diuretic": ["Hydrochlorothiazide", "Chlortalidone", "Indapamide", "Metolazone"],
+                  "Beta-blocker": ["Metoprolol", "Atenolol", "Bisoprolol", "Carvedilol", "Propranolol", "Labetalol", "Nebivolol", "Sotalol", "Nadolol", "Timolol"],
+                  "Calcium Channel Blocker": ["Amlodipine", "Nifedipine", "Felodipine", "Verapamil", "Diltiazem", "Lacidipine"],
+                  "PPI (Proton Pump Inhibitors)": ["Omeprazole", "Lansoprazole", "Pantoprazole", "Esomeprazole", "Rabeprazole"]
+                  // Add more classes as needed
+             };
+             meds.forEach(med => {
+                  for (const className in drugClassesForDuplicateCheck) {
+                      if (drugClassesForDuplicateCheck[className].includes(med)) {
+                          classCounts[className] = (classCounts[className] || 0) + 1;
+                      }
+                  }
+             });
+             for (const className in classCounts) {
+                  if (classCounts[className] > 1) {
+                      const duplicateRisk = stoppCombinations.find(c => c.combination[0] === "Duplicate drug class")?.risk;
+                      const messageKey = `Duplicate-${className}`;
+                      const message = `<span class="risky">⚠ Duplicate Drug Class (${className} x${classCounts[className]})\n   ${duplicateRisk || 'Avoid duplicate drug class therapy without clear justification.'}</span>\n`;
+                      if (!reportedMessages.has(messageKey)) {
+                          stoppText += message;
+                          reportedMessages.add(messageKey);
+                          interactionsFound = true;
+                      }
+                  }
+             }
+
+             // Final message if no STOPP issues found
+              if (!interactionsFound) {
+                  if (meds.length > 0) {
+                      stoppText += '<span class="safe">✅ No specific high-risk interactions or contraindications based on the selected STOPP criteria examples and provided patient data were detected. (Note: This tool includes examples, not the exhaustive list. Clinical judgment required).</span>';
+                  } else {
+                      stoppText += 'No medications evaluated against STOPP Criteria examples.';
+                  }
+              }
+
+            document.querySelector('#resultsSTOPP pre').innerHTML = stoppText;
+            document.getElementById('resultsSTOPP').classList.add('visible');
+
+            // --- Final UI Updates ---
+            document.getElementById('loadingSpinner').style.display = 'none'; // Hide spinner
+            // Scroll smoothly to the first visible result section
+            const firstResult = document.querySelector('.results-section.visible');
+            if (firstResult) {
+               firstResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            document.getElementById('downloadBtn').style.display = 'block'; // Show print button
+
+        }, 100); // Small timeout
+    }); // End of form submit listener
+
+    // --- Print Report Logic (using window.print) ---
+    document.getElementById('downloadBtn').addEventListener('click', function () {
+       // Gather data for the report
+        const name = document.querySelector('input[name="patient_name"]').value || "Patient";
+        const abhaId = document.getElementById('abhaInput').value || "N/A";
+        const age = document.querySelector('input[name="age"]').value || "N/A";
+        const sex = document.querySelector('select[name="sex"]').value || "N/A";
+        const egfrValue = document.querySelector('input[name="egfr"]').value
+                           ? `${document.querySelector('input[name="egfr"]').value} mL/min/1.73m²`
+                           : "N/A";
+        const fallsHistory = document.querySelector('select[name="falls_history"]').value || "N/A";
+
+        const medsList = Array.from(document.querySelectorAll('input[name="medication"]')) // Use hidden input
+           .map(m => m.value)
+           .filter(m => m !== "") // Filter out empty hidden inputs
+           .map(m => {
+               const score = medicationData[m]?.acb;
+               if (score === null) return `${m} (ACB: N/A)`;
+               else if (typeof score === 'number') return `${m} (ACB: ${score})`;
+               else return m; // Fallback if somehow invalid
+            })
+           .join(', ') || "None Selected";
+
+        const currentDate = new Date();
+        const reportDate = currentDate.toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+        const reportDateTime = currentDate.toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short'}); // Includes local timezone automatically
+
+        // Helper function to format HTML from results <pre> tags for printing
+        const formatHtmlForPrint = (selector) => {
+            const element = document.querySelector(selector + ' pre');
+            if (!element) return '<p>Section not found or empty.</p>';
+            const clone = element.cloneNode(true); // Clone to avoid modifying original display
+
+            // Replace spans with styled text for printing
+            clone.querySelectorAll('span.risky').forEach(span => {
+                 span.outerHTML = `<strong style="color: #dc3545; font-weight: bold;">${span.innerHTML}</strong>`;
+            });
+            clone.querySelectorAll('span.safe').forEach(span => {
+                 span.outerHTML = `<strong style="color: #28a745; font-weight: bold;">${span.innerHTML}</strong>`;
+            });
+             // Ensure strong tags are bold
+            clone.querySelectorAll('strong').forEach(strong => {
+                 strong.style.fontWeight = 'bold';
+            });
+
+            let html = clone.innerHTML;
+            html = html.replace(/⚠/g, '<strong>WARNING:</strong>'); // Replace icons with text
+            html = html.replace(/✅/g, '<strong>OK:</strong>');
+            html = html.replace(/\n/g, '<br>'); // Convert newlines to <br> for HTML display
+            return `<div class="results-print">${html}</div>`; // Wrap in div with class
+        };
+
+        const acbHTML = formatHtmlForPrint('#resultsACB');
+        const beersHTML = formatHtmlForPrint('#resultsBeers');
+        const stoppHTML = formatHtmlForPrint('#resultsSTOPP');
+
+        // Construct the full HTML content for the print window (Layout Adjusted)
+        const printContent = `
+       <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <title>Medication Safety Report for ${name}</title>
+                <style>
+                    body { font-family: 'Arial', sans-serif; color: #333; line-height: 1.5; margin: 25px; }
+                    h1, h2, h3 { color: #2c3e50; margin-bottom: 0.5em; }
+                    h1 { text-align: center; margin-bottom: 1em; font-size: 1.8em;}
+                    h2 { font-size: 1.4em; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 1.5em;}
+                    h3 { font-size: 1.1em; margin-top: 1em; color: #3498db;}
+                    .patient-info { margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 8px; background: #f9f9f9;}
+                    .patient-info p { margin: 5px 0; font-size: 0.9em; word-wrap: break-word; }
+                    .patient-info p strong { color: #555; margin-right: 5px;}
+                    /* .section removed as wrapper */
+                    .results-print { white-space: normal; /* Allow wrapping in print */ word-wrap: break-word; font-family: 'Arial', sans-serif; background: #f4f4f4; padding: 12px; border-radius: 4px; border: 1px solid #ddd; font-size: 0.8em; line-height: 1.6; margin-top: 5px; }
+                    .results-print strong { font-weight: bold; } /* Ensure strong is bold */
+                    .results-print br { margin-bottom: 0.6em; display: block; content: ""; } /* Better spacing for <br> */
+                    .footer { margin-top: 30px; padding-top: 15px; font-size: 0.5em; font-style: italic; text-align: center; color: #777; border-top: 1px solid #ccc;}
+                    @media print {
+                         body { margin: 15mm; margin-bottom: 30mm; /* Added more bottom margin for footer */ } /* Add print margins */
+                         h1, h2, h3 { page-break-after: avoid; }
+                         .patient-info, .results-print { page-break-inside: avoid; } /* Apply page break avoidance */
+                         .footer { position: fixed; bottom: 10mm; left: 15mm; right: 15mm; width: auto; font-size: 0.50em; background: white; /* Ensure footer has background */}
+                         a { text-decoration: none; color: #333; } /* Remove underlines for print */
+                         button { display: none; } /* Hide buttons in print view */
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Drug Safety Calculator Report</h1>
+                <div class="patient-info">
+                    <h2>Patient Details</h2>
+                    <p><strong>Name:</strong> ${name}</p>
+                    <p><strong>ABHA ID:</strong> ${abhaId}</p>
+                    <p><strong>Age:</strong> ${age}</p>
+                    <p><strong>Sex:</strong> ${sex}</p>
+                    <p><strong>eGFR:</strong> ${egfrValue}</p>
+                    <p><strong>History of Falls:</strong> ${fallsHistory}</p>
+                    <p><strong>Medications Evaluated:</strong> ${medsList}</p>
+                    <p><strong>Report Date:</strong> ${reportDate}</p>
+                </div>
+
+                <h2>Evaluation Summary</h2>
+
+                <h3>Anticholinergic Burden (ACB) Scale</h3>
+                ${acbHTML}
+
+                <h3>Beers Criteria® (2023 Examples)</h3>
+                ${beersHTML}
+
+                <h3>STOPP Criteria & Renal Assessment (v3 Examples)</h3>
+                ${stoppHTML}
+
+
+                <p class="footer">
+                    <strong>Disclaimer:</strong> This report is generated based on selected standard criteria (ACB Scale, Beers Criteria® v2023 examples, STOPP Criteria v3 examples) and user inputs as of ${reportDateTime}. It is intended for informational purposes only and does not replace professional clinical judgment or a comprehensive medication review by a qualified healthcare professional (e.g., physician, pharmacist). Drug information and clinical guidelines change frequently. Always consult with a healthcare professional for medical advice, diagnosis, and treatment decisions. This tool does not check for all possible drug interactions, contraindications, allergies, dosages, or patient-specific factors. Verify all information independently. Location context: Kolkata, West Bengal, India.
+                </p>
+            </body>
+            </html>
+           `;
+
+        // Open a new window, write the content, and trigger print
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            setTimeout(() => { // Allow content to load before printing
+               printWindow.focus();
+               printWindow.print();
+               // Optionally close the print window after a delay
+               // setTimeout(() => { printWindow.close(); }, 1000);
+            }, 500); // Adjust delay if needed
+        } else {
+            alert("Could not open print window. Please check your browser's pop-up blocker settings.");
+        }
+    });
+
+
+    // --- ABHA ID Auto-Formatting ---
+    const abhaInput = document.getElementById('abhaInput');
+    if (abhaInput) {
+        abhaInput.addEventListener('input', function (e) {
+            const target = e.target;
+            let originalValue = target.value;
+            let originalCursorPos = target.selectionStart;
+            // Count digits before cursor in original value to reposition cursor later
+            let digitsBeforeCursor = (originalValue.substring(0, originalCursorPos).match(/\d/g) || []).length;
+
+            // Remove non-digits and limit length
+            let value = target.value.replace(/[^\d]/g, '');
+            value = value.substring(0, 14); // Max 14 digits
+
+            let formattedValue = '';
+            const len = value.length;
+
+            // Apply formatting based on length
+            if (len === 0) { formattedValue = ''; }
+            else if (len <= 2) { formattedValue = value; }
+            else if (len <= 6) { formattedValue = `${value.substring(0, 2)}-${value.substring(2, len)}`; }
+            else if (len <= 10) { formattedValue = `${value.substring(0, 2)}-${value.substring(2, 6)}-${value.substring(6, len)}`; }
+            else { formattedValue = `${value.substring(0, 2)}-${value.substring(2, 6)}-${value.substring(6, 10)}-${value.substring(10, len)}`; }
+
+            // Update input value only if it changed and reposition cursor
+            if (target.value !== formattedValue) {
+                target.value = formattedValue;
+
+                // Calculate new cursor position based on number of digits typed
+                let newCursorPos = 0;
+                let digitsCounted = 0;
+                for (let i = 0; i < formattedValue.length && digitsCounted < digitsBeforeCursor; i++) {
+                    newCursorPos++;
+                    if (/\d/.test(formattedValue[i])) {
+                        digitsCounted++;
+                    }
+                }
+                // Adjust cursor position if it lands right before a hyphen that was just added
+                while (newCursorPos < formattedValue.length && formattedValue[newCursorPos] === '-' && originalValue.charAt(originalCursorPos-1) !== '-') {
+                   newCursorPos++;
+                }
+
+                target.setSelectionRange(newCursorPos, newCursorPos);
+            }
+        });
+    } else { console.error("ABHA input element #abhaInput not found!"); }
+
+
+    // --- Suggestion Form Logic (Using Gmail Compose URL) ---
+    const showSuggestionFormBtn = document.getElementById('showSuggestionFormBtn');
+    const suggestionFormArea = document.getElementById('suggestionFormArea');
+    const submitSuggestionBtn = document.getElementById('submitSuggestionBtn');
+
+    if (showSuggestionFormBtn && suggestionFormArea) {
+        showSuggestionFormBtn.addEventListener('click', function() {
+            suggestionFormArea.classList.add('visible'); // Use class for transition
+            showSuggestionFormBtn.style.display = 'none';
+        });
+    } else { console.error("Suggestion show button or form area not found!"); }
+
+    if (submitSuggestionBtn) {
+        submitSuggestionBtn.addEventListener('click', function() {
+            const medName = document.getElementById('suggestionMedName').value.trim();
+            const details = document.getElementById('suggestionDetails').value.trim();
+            const userEmail = document.getElementById('suggestionEmail').value.trim();
+
+            if (!medName) {
+                alert('Please enter the name of the medication you want to suggest or update.');
+                return;
+            }
+
+            // --- Email address for suggestions ---
+            const recipientEmail = "ayushgupta04ind@gmail.com"; // Your specified email
+            // --- End email section ---
+
+            // Construct Subject and Body
+            const subject = `Medication Suggestion for Drug Safety Tool: ${medName}`;
+            let body = `Suggested Medication/Update: ${medName}\n\n`;
+            if (details) { body += `Details Provided:\n${details}\n\n`; }
+            else { body += `Details Provided: None\n\n`; }
+            if (userEmail) { body += `User Email (Optional): ${userEmail}\n\n`; }
+            body += `--- End of Suggestion ---`;
+
+            // Encode components for URL
+            const encodedSubject = encodeURIComponent(subject);
+            const encodedBody = encodeURIComponent(body);
+            const encodedRecipient = encodeURIComponent(recipientEmail); // Handles multiple comma-separated emails
+
+            // Construct Gmail Compose URL
+            const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodedRecipient}&su=${encodedSubject}&body=${encodedBody}`;
+
+            // Open Gmail in a new tab
+            console.log("Attempting to open Gmail URL:", gmailUrl); // Log for debugging
+            const gmailWindow = window.open(gmailUrl, '_blank');
+            if (!gmailWindow) {
+                alert("Could not open Gmail window. Please check your browser's pop-up blocker settings. You may need to copy the details manually.");
+                console.error("window.open failed - possibly blocked by pop-up blocker.");
+            }
+
+             // Optionally reset form fields
+             document.getElementById('suggestionMedName').value = '';
+             document.getElementById('suggestionDetails').value = '';
+             document.getElementById('suggestionEmail').value = '';
+             // Hide the form again after submission? Optional.
+             // suggestionFormArea.classList.remove('visible');
+             // showSuggestionFormBtn.style.display = 'block';
+        });
+    } else { console.error("Suggestion submit button #submitSuggestionBtn not found!"); }
+    // --- End Suggestion Form Logic ---
+
+
+    // --- Initial Setup ---
+    addMedicationField(); // Add the first medication field automatically
+
   </script>
-  <div id="pdfContainer" style="
-    position: absolute;
-    top: -9999px;
-    left: -9999px;
-    width: 800px;
-    padding: 30px;
-    font-family: 'Segoe UI', sans-serif;
-    color: #333;
-    background: white;
-    z-index: -1;
-  "></div>
+
 </body>
 </html>
